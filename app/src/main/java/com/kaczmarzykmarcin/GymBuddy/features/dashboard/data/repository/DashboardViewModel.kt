@@ -10,10 +10,10 @@ import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import javax.inject.Inject
 
 private const val TAG = "DashboardViewModel"
@@ -54,14 +54,10 @@ class DashboardViewModel @Inject constructor(
     fun loadLastWorkout(userId: String) {
         viewModelScope.launch {
             try {
-                val result = workoutRepository.getUserWorkoutHistory(userId)
-                if (result.isSuccess) {
-                    val workouts = result.getOrNull() ?: emptyList()
-                    _lastWorkout.value = workouts.firstOrNull()
-                    Log.d(TAG, "Last workout loaded: ${_lastWorkout.value?.id}")
-                } else {
-                    Log.e(TAG, "Failed to load workout history: ${result.exceptionOrNull()?.message}")
-                }
+                // Pobierz pierwszy element z Flow
+                val workouts = workoutRepository.getUserWorkoutHistory(userId).firstOrNull() ?: emptyList()
+                _lastWorkout.value = workouts.firstOrNull()
+                Log.d(TAG, "Last workout loaded: ${_lastWorkout.value?.id}")
             } catch (e: Exception) {
                 Log.e(TAG, "Exception loading workout history", e)
             }
@@ -79,22 +75,20 @@ class DashboardViewModel @Inject constructor(
                 calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                 val startOfWeek = calendar.time
 
-                // Get workout history
-                val workoutResult = workoutRepository.getUserWorkoutHistory(userId)
+                // Initialize activity map with all days set to false
+                val activityMap = mutableMapOf<String, Boolean>(
+                    "Pn" to false,
+                    "Wt" to false,
+                    "Śr" to false,
+                    "Cz" to false,
+                    "Pt" to false,
+                    "Sb" to false,
+                    "Nd" to false
+                )
 
-                if (workoutResult.isSuccess) {
-                    val workouts = workoutResult.getOrNull() ?: emptyList()
-
-                    // Initialize activity map with all days set to false
-                    val activityMap = mutableMapOf<String, Boolean>(
-                        "Pn" to false,
-                        "Wt" to false,
-                        "Śr" to false,
-                        "Cz" to false,
-                        "Pt" to false,
-                        "Sb" to false,
-                        "Nd" to false
-                    )
+                try {
+                    // Pobierz pierwszy element z Flow
+                    val workouts = workoutRepository.getUserWorkoutHistory(userId).firstOrNull() ?: emptyList()
 
                     // Mark days with workouts
                     for (workout in workouts) {
@@ -127,11 +121,67 @@ class DashboardViewModel @Inject constructor(
 
                     _weeklyActivity.value = activityMap
                     Log.d(TAG, "Weekly activity loaded: ${activityMap.filter { it.value }.size} active days")
-                } else {
-                    Log.e(TAG, "Failed to load workout history for activity: ${workoutResult.exceptionOrNull()?.message}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load workout history for activity", e)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Exception loading weekly activity", e)
+            }
+        }
+    }
+
+    // Alternatywna wersja ładowania danych aktywności tygodniowej, jeśli potrzebujemy ciągłej aktualizacji
+    fun observeWeeklyActivity(userId: String) {
+        viewModelScope.launch {
+            workoutRepository.getUserWorkoutHistory(userId).collectLatest { workouts ->
+                val calendar = Calendar.getInstance()
+
+                // Get the start of the current week (Monday)
+                calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                val startOfWeek = calendar.time
+
+                // Initialize activity map with all days set to false
+                val activityMap = mutableMapOf<String, Boolean>(
+                    "Pn" to false,
+                    "Wt" to false,
+                    "Śr" to false,
+                    "Cz" to false,
+                    "Pt" to false,
+                    "Sb" to false,
+                    "Nd" to false
+                )
+
+                // Mark days with workouts
+                for (workout in workouts) {
+                    workout.endTime?.let { endTime ->
+                        val workoutDate = endTime.toDate()
+
+                        // Only check workouts from current week
+                        if (workoutDate.after(startOfWeek) || workoutDate == startOfWeek) {
+                            val cal = Calendar.getInstance()
+                            cal.time = workoutDate
+
+                            // Get day of week
+                            val dayOfWeek = when (cal.get(Calendar.DAY_OF_WEEK)) {
+                                Calendar.MONDAY -> "Pn"
+                                Calendar.TUESDAY -> "Wt"
+                                Calendar.WEDNESDAY -> "Śr"
+                                Calendar.THURSDAY -> "Cz"
+                                Calendar.FRIDAY -> "Pt"
+                                Calendar.SATURDAY -> "Sb"
+                                Calendar.SUNDAY -> "Nd"
+                                else -> null
+                            }
+
+                            dayOfWeek?.let {
+                                activityMap[it] = true
+                            }
+                        }
+                    }
+                }
+
+                _weeklyActivity.value = activityMap
+                Log.d(TAG, "Weekly activity updated: ${activityMap.filter { it.value }.size} active days")
             }
         }
     }

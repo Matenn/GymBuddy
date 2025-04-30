@@ -1,47 +1,43 @@
 package com.kaczmarzykmarcin.GymBuddy.data.repository
 
+import android.util.Log
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
-import kotlinx.coroutines.tasks.await
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutTemplateDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.UUID
 
 /**
  * Repozytorium do zarządzania szablonami treningów i historią treningów.
+ * Obsługuje zarówno lokalne jak i zdalne źródło danych.
  */
 @Singleton
-class WorkoutRepository @Inject constructor (
-    private val firestore: FirebaseFirestore,
-    private val exerciseRepository: ExerciseRepository
+class WorkoutRepository @Inject constructor(
+    private val exerciseRepository: ExerciseRepository,
+    private val workoutDao: WorkoutDao,
+    private val workoutTemplateDao: WorkoutTemplateDao,
+    private val remoteDataSource: RemoteUserDataSource,
+    private val syncManager: SyncManager,
+    private val networkManager: NetworkConnectivityManager,
+    private val mappers: UserMappers
 ) {
-    private val workoutTemplatesCollection = firestore.collection("workoutTemplates")
-    private val completedWorkoutsCollection = firestore.collection("completedWorkouts")
+    private val TAG = "WorkoutRepository"
 
     /**
-     * Pobiera wszystkie szablony treningów użytkownika.
+     * Pobiera wszystkie szablony treningów użytkownika jako Flow z lokalnej bazy danych.
      */
-    suspend fun getUserWorkoutTemplates(userId: String): Result<List<WorkoutTemplate>> {
-        return try {
-            val snapshot = workoutTemplatesCollection
-                .whereEqualTo("userId", userId)
-                .orderBy("updatedAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
-
-            val templates = snapshot.documents.map { doc ->
-                WorkoutTemplate.fromMap(doc.id, doc.data ?: mapOf())
-            }
-
-            Result.success(templates)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    fun getUserWorkoutTemplates(userId: String): Flow<List<WorkoutTemplate>> {
+        return workoutTemplateDao.getWorkoutTemplatesByUserId(userId)
+            .map { entities -> entities.map { mappers.toModel(it) } }
     }
 
     /**
@@ -49,15 +45,30 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun getWorkoutTemplate(templateId: String): Result<WorkoutTemplate> {
         return try {
-            val doc = workoutTemplatesCollection.document(templateId).get().await()
+            // Próba pobrania z lokalnej bazy danych
+            val templateEntity = workoutTemplateDao.getWorkoutTemplateById(templateId)
 
-            if (doc.exists()) {
-                val template = WorkoutTemplate.fromMap(doc.id, doc.data ?: mapOf())
-                Result.success(template)
-            } else {
-                Result.failure(Exception("Workout template not found"))
+            if (templateEntity != null) {
+                Log.d(TAG, "Retrieved workout template from local database")
+                return Result.success(mappers.toModel(templateEntity))
             }
+
+            // Jeśli nie ma danych lokalnie, pobierz z Firebase
+            Log.d(TAG, "Template not found locally, trying Firebase")
+            val remoteResult = remoteDataSource.getWorkoutTemplate(templateId)
+
+            if (remoteResult.isSuccess) {
+                val template = remoteResult.getOrNull()!!
+
+                // Zapisz lokalnie
+                workoutTemplateDao.insertWorkoutTemplate(mappers.toEntity(template))
+
+                return Result.success(template)
+            }
+
+            remoteResult
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get workout template", e)
             Result.failure(e)
         }
     }
@@ -67,11 +78,23 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun createWorkoutTemplate(template: WorkoutTemplate): Result<WorkoutTemplate> {
         return try {
-            val docRef = workoutTemplatesCollection.document()
-            val templateWithId = template.copy(id = docRef.id)
-            docRef.set(templateWithId.toMap()).await()
+            // Generuj nowe ID jeśli nie zostało dostarczone
+            val templateWithId = if (template.id.isEmpty()) {
+                template.copy(id = UUID.randomUUID().toString())
+            } else {
+                template
+            }
+
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(templateWithId, true)
+            workoutTemplateDao.insertWorkoutTemplate(entity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
             Result.success(templateWithId)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to create workout template", e)
             Result.failure(e)
         }
     }
@@ -81,10 +104,19 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun updateWorkoutTemplate(template: WorkoutTemplate): Result<WorkoutTemplate> {
         return try {
+            // Aktualizuj datę modyfikacji
             val updatedTemplate = template.copy(updatedAt = Timestamp.now())
-            workoutTemplatesCollection.document(template.id).set(updatedTemplate.toMap()).await()
+
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(updatedTemplate, true)
+            workoutTemplateDao.updateWorkoutTemplate(entity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
             Result.success(updatedTemplate)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update workout template", e)
             Result.failure(e)
         }
     }
@@ -94,9 +126,17 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun deleteWorkoutTemplate(templateId: String): Result<Unit> {
         return try {
-            workoutTemplatesCollection.document(templateId).delete().await()
+            // Usuń lokalnie
+            workoutTemplateDao.deleteWorkoutTemplate(templateId)
+
+            // Usuń w Firebase - jeśli jest dostępny
+            if (networkManager.isInternetAvailable()) {
+                remoteDataSource.deleteWorkoutTemplate(templateId)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete workout template", e)
             Result.failure(e)
         }
     }
@@ -106,11 +146,23 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun startWorkout(workout: CompletedWorkout): Result<CompletedWorkout> {
         return try {
-            val docRef = completedWorkoutsCollection.document()
-            val workoutWithId = workout.copy(id = docRef.id)
-            docRef.set(workoutWithId.toMap()).await()
+            // Generuj nowe ID jeśli nie zostało dostarczone
+            val workoutWithId = if (workout.id.isEmpty()) {
+                workout.copy(id = UUID.randomUUID().toString())
+            } else {
+                workout
+            }
+
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(workoutWithId, true)
+            workoutDao.insertCompletedWorkout(entity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
             Result.success(workoutWithId)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to start workout", e)
             Result.failure(e)
         }
     }
@@ -120,29 +172,36 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun finishWorkout(workoutId: String): Result<CompletedWorkout> {
         return try {
-            val workoutDoc = completedWorkoutsCollection.document(workoutId).get().await()
-
-            if (!workoutDoc.exists()) {
+            // Pobierz trening z lokalnej bazy danych
+            val workoutEntity = workoutDao.getCompletedWorkoutById(workoutId)
+            if (workoutEntity == null) {
+                Log.e(TAG, "Workout not found for finishing")
                 return Result.failure(Exception("Workout not found"))
             }
 
-            val workout = CompletedWorkout.fromMap(workoutId, workoutDoc.data ?: mapOf())
+            // Konwertuj na model
+            val workout = mappers.toModel(workoutEntity)
+
+            // Ustaw czas zakończenia i oblicz czas trwania
             val endTime = Timestamp.now()
             val duration = (endTime.seconds - workout.startTime.seconds) / 60
 
-            val updates = mapOf(
-                "endTime" to endTime,
-                "duration" to duration
+            // Zaktualizuj model
+            val updatedWorkout = workout.copy(
+                endTime = endTime,
+                duration = duration
             )
 
-            completedWorkoutsCollection.document(workoutId).update(updates).await()
+            // Zapisz lokalnie
+            val updatedEntity = mappers.toEntity(updatedWorkout, true)
+            workoutDao.updateCompletedWorkout(updatedEntity)
 
-            // Pobierz zaktualizowany dokument
-            val updatedDoc = completedWorkoutsCollection.document(workoutId).get().await()
-            val updatedWorkout = CompletedWorkout.fromMap(workoutId, updatedDoc.data ?: mapOf())
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
 
             Result.success(updatedWorkout)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to finish workout", e)
             Result.failure(e)
         }
     }
@@ -152,33 +211,26 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun updateWorkout(workout: CompletedWorkout): Result<CompletedWorkout> {
         return try {
-            completedWorkoutsCollection.document(workout.id).set(workout.toMap()).await()
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(workout, true)
+            workoutDao.updateCompletedWorkout(entity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
             Result.success(workout)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update workout", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Pobiera historię treningów użytkownika.
+     * Pobiera historię treningów użytkownika jako Flow z lokalnej bazy danych.
      */
-    suspend fun getUserWorkoutHistory(userId: String): Result<List<CompletedWorkout>> {
-        return try {
-            val snapshot = completedWorkoutsCollection
-                .whereEqualTo("userId", userId)
-                .whereNotEqualTo("endTime", null) // tylko zakończone treningi
-                .orderBy("endTime", Query.Direction.DESCENDING)
-                .get()
-                .await()
-
-            val workouts = snapshot.documents.map { doc ->
-                CompletedWorkout.fromMap(doc.id, doc.data ?: mapOf())
-            }
-
-            Result.success(workouts)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    fun getUserWorkoutHistory(userId: String): Flow<List<CompletedWorkout>> {
+        return workoutDao.getCompletedWorkoutsByUserId(userId)
+            .map { entities -> entities.map { mappers.toModel(it) } }
     }
 
     /**
@@ -186,22 +238,33 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun getActiveWorkout(userId: String): Result<CompletedWorkout?> {
         return try {
-            val snapshot = completedWorkoutsCollection
-                .whereEqualTo("userId", userId)
-                .whereEqualTo("endTime", null) // tylko niezakończone treningi
-                .orderBy("startTime", Query.Direction.DESCENDING)
-                .limit(1)
-                .get()
-                .await()
+            // Pobierz z lokalnej bazy danych
+            val activeWorkoutEntity = workoutDao.getActiveWorkout(userId)
 
-            if (snapshot.isEmpty) {
-                Result.success(null)
-            } else {
-                val doc = snapshot.documents.first()
-                val workout = CompletedWorkout.fromMap(doc.id, doc.data ?: mapOf())
-                Result.success(workout)
+            if (activeWorkoutEntity != null) {
+                return Result.success(mappers.toModel(activeWorkoutEntity))
             }
+
+            // Jeśli nie ma danych lokalnie i jest sieć, pobierz z Firebase
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.getActiveWorkout(userId)
+
+                if (remoteResult.isSuccess) {
+                    val activeWorkout = remoteResult.getOrNull()
+
+                    // Jeśli znaleziono aktywny trening, zapisz lokalnie
+                    if (activeWorkout != null) {
+                        workoutDao.insertCompletedWorkout(mappers.toEntity(activeWorkout))
+                    }
+
+                    return Result.success(activeWorkout)
+                }
+            }
+
+            // Brak aktywnego treningu
+            Result.success(null)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get active workout", e)
             Result.failure(e)
         }
     }
@@ -211,9 +274,17 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun cancelWorkout(workoutId: String): Result<Unit> {
         return try {
-            completedWorkoutsCollection.document(workoutId).delete().await()
+            // Usuń lokalnie
+            workoutDao.deleteCompletedWorkout(workoutId)
+
+            // Usuń w Firebase - jeśli jest dostępny
+            if (networkManager.isInternetAvailable()) {
+                remoteDataSource.deleteWorkout(workoutId)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel workout", e)
             Result.failure(e)
         }
     }
@@ -223,81 +294,89 @@ class WorkoutRepository @Inject constructor (
      */
     suspend fun getCompletedWorkout(workoutId: String): Result<CompletedWorkout> {
         return try {
-            val doc = completedWorkoutsCollection.document(workoutId).get().await()
+            // Pobierz z lokalnej bazy danych
+            val workoutEntity = workoutDao.getCompletedWorkoutById(workoutId)
 
-            if (doc.exists()) {
-                val workout = CompletedWorkout.fromMap(doc.id, doc.data ?: mapOf())
-                Result.success(workout)
-            } else {
-                Result.failure(Exception("Workout not found"))
+            if (workoutEntity != null) {
+                return Result.success(mappers.toModel(workoutEntity))
             }
+
+            // Jeśli nie ma danych lokalnie, pobierz z Firebase
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.getCompletedWorkout(workoutId)
+
+                if (remoteResult.isSuccess) {
+                    val workout = remoteResult.getOrNull()!!
+
+                    // Zapisz lokalnie
+                    workoutDao.insertCompletedWorkout(mappers.toEntity(workout))
+
+                    return Result.success(workout)
+                }
+
+                return remoteResult
+            }
+
+            Result.failure(Exception("Workout not found"))
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get completed workout", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Obserwuje szablony treningów użytkownika.
+     * Pobiera wszystkie szablony treningów użytkownika z Firebase i zapisuje lokalnie.
      */
-    fun observeUserWorkoutTemplates(userId: String): Flow<List<WorkoutTemplate>> = callbackFlow {
-        val listenerRegistration = workoutTemplatesCollection
-            .whereEqualTo("userId", userId)
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-
-                if (snapshot == null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-
-                val templates = snapshot.documents.map { doc ->
-                    WorkoutTemplate.fromMap(doc.id, doc.data ?: mapOf())
-                }
-
-                // Emituj wynik
-                trySend(templates)
+    suspend fun syncWorkoutTemplates(userId: String): Result<List<WorkoutTemplate>> {
+        return try {
+            if (!networkManager.isInternetAvailable()) {
+                return Result.failure(Exception("No network connection"))
             }
 
-        // Zamknij listener po zakończeniu flow
-        awaitClose {
-            listenerRegistration.remove()
+            val remoteResult = remoteDataSource.getUserWorkoutTemplates(userId)
+
+            if (remoteResult.isSuccess) {
+                val templates = remoteResult.getOrNull()!!
+
+                // Zapisz wszystkie szablony lokalnie
+                val entities = templates.map { mappers.toEntity(it) }
+                entities.forEach { workoutTemplateDao.insertWorkoutTemplate(it) }
+
+                Result.success(templates)
+            } else {
+                remoteResult
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync workout templates", e)
+            Result.failure(e)
         }
     }
 
     /**
-     * Obserwuje historię treningów użytkownika.
+     * Pobiera historię treningów użytkownika z Firebase i zapisuje lokalnie.
      */
-    fun observeUserWorkoutHistory(userId: String): Flow<List<CompletedWorkout>> = callbackFlow {
-        val listenerRegistration = completedWorkoutsCollection
-            .whereEqualTo("userId", userId)
-            .whereNotEqualTo("endTime", null)
-            .orderBy("endTime", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-
-                if (snapshot == null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-
-                val workouts = snapshot.documents.map { doc ->
-                    CompletedWorkout.fromMap(doc.id, doc.data ?: mapOf())
-                }
-
-                // Emituj wynik
-                trySend(workouts)
+    suspend fun syncWorkoutHistory(userId: String): Result<List<CompletedWorkout>> {
+        return try {
+            if (!networkManager.isInternetAvailable()) {
+                return Result.failure(Exception("No network connection"))
             }
 
-        // Zamknij listener po zakończeniu flow
-        awaitClose {
-            listenerRegistration.remove()
+            val remoteResult = remoteDataSource.getUserWorkoutHistory(userId)
+
+            if (remoteResult.isSuccess) {
+                val workouts = remoteResult.getOrNull()!!
+
+                // Zapisz wszystkie treningi lokalnie
+                val entities = workouts.map { mappers.toEntity(it) }
+                entities.forEach { workoutDao.insertCompletedWorkout(it) }
+
+                Result.success(workouts)
+            } else {
+                remoteResult
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync workout history", e)
+            Result.failure(e)
         }
     }
 }

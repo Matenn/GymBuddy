@@ -1,35 +1,55 @@
 package com.kaczmarzykmarcin.GymBuddy.data.repository
 
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import android.util.Log
+import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
 import com.kaczmarzykmarcin.GymBuddy.data.model.Achievement
 import com.kaczmarzykmarcin.GymBuddy.data.model.UserAchievement
-import kotlinx.coroutines.tasks.await
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserAchievementDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.flow
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Repozytorium do zarządzania osiągnięciami użytkowników.
+ * Obsługuje zarówno lokalne jak i zdalne źródło danych.
  */
 @Singleton
 class AchievementRepository @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val userAchievementDao: UserAchievementDao,
+    private val remoteDataSource: RemoteUserDataSource,
+    private val syncManager: SyncManager,
+    private val networkManager: NetworkConnectivityManager,
+    private val mappers: UserMappers
 ) {
-    private val userAchievementsCollection = firestore.collection("userAchievements")
+    private val TAG = "AchievementRepository"
 
     /**
      * Dodaje nowe osiągnięcie dla użytkownika.
      */
     suspend fun addUserAchievement(userAchievement: UserAchievement): Result<UserAchievement> {
         return try {
-            val docRef = userAchievementsCollection.document()
-            val achievementWithId = userAchievement.copy(id = docRef.id)
-            docRef.set(achievementWithId.toMap()).await()
+            // Generuj nowe ID jeśli nie zostało dostarczone
+            val achievementWithId = if (userAchievement.id.isEmpty()) {
+                userAchievement.copy(id = UUID.randomUUID().toString())
+            } else {
+                userAchievement
+            }
+
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(achievementWithId, true)
+            userAchievementDao.insertUserAchievement(entity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
             Result.success(achievementWithId)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to add user achievement", e)
             Result.failure(e)
         }
     }
@@ -41,6 +61,14 @@ class AchievementRepository @Inject constructor(
         val achievement = Achievement.getById(achievementId) ?: return Result.failure(
             IllegalArgumentException("Achievement with ID $achievementId does not exist")
         )
+
+        // Sprawdź, czy użytkownik już ma to osiągnięcie
+        if (hasAchievement(userId, achievementId)) {
+            val existingAchievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
+            if (existingAchievement != null) {
+                return Result.success(mappers.toModel(existingAchievement))
+            }
+        }
 
         val userAchievement = UserAchievement(
             userId = userId,
@@ -55,18 +83,28 @@ class AchievementRepository @Inject constructor(
      */
     suspend fun getUserAchievements(userId: String): Result<List<UserAchievement>> {
         return try {
-            val snapshot = userAchievementsCollection
-                .whereEqualTo("userId", userId)
-                .orderBy("earnedAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
+            // Pobierz z lokalnej bazy danych
+            val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
 
-            val achievements = snapshot.documents.map { doc ->
-                UserAchievement.fromMap(doc.id, doc.data ?: mapOf())
+            // Jeśli nie ma danych lokalnie i jest sieć, pobierz z Firebase i zapisz lokalnie
+            if (achievements.isEmpty() && networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.getUserAchievements(userId)
+
+                if (remoteResult.isSuccess) {
+                    val remoteAchievements = remoteResult.getOrNull()!!
+
+                    // Zapisz osiągnięcia lokalnie
+                    val entities = remoteAchievements.map { mappers.toEntity(it) }
+                    userAchievementDao.insertUserAchievements(entities)
+
+                    return Result.success(remoteAchievements)
+                }
             }
 
-            Result.success(achievements)
+            // Zwróć osiągnięcia z lokalnej bazy danych
+            Result.success(achievements.map { mappers.toModel(it) })
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to get user achievements", e)
             Result.failure(e)
         }
     }
@@ -76,15 +114,16 @@ class AchievementRepository @Inject constructor(
      */
     suspend fun hasAchievement(userId: String, achievementId: Int): Boolean {
         return try {
-            val snapshot = userAchievementsCollection
-                .whereEqualTo("userId", userId)
-                .whereEqualTo("achievementId", achievementId)
-                .limit(1)
-                .get()
-                .await()
+            val achievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
 
-            !snapshot.isEmpty
+            // Jeśli nie znaleziono lokalnie i jest sieć, sprawdź w Firebase
+            if (achievement == null && networkManager.isInternetAvailable()) {
+                return remoteDataSource.hasAchievement(userId, achievementId)
+            }
+
+            achievement != null
         } catch (e: Exception) {
+            Log.e(TAG, "Error checking for achievement", e)
             false
         }
     }
@@ -92,32 +131,32 @@ class AchievementRepository @Inject constructor(
     /**
      * Obserwuje zmiany w osiągnięciach użytkownika jako Flow.
      */
-    fun observeUserAchievements(userId: String): Flow<List<UserAchievement>> = callbackFlow {
-        val listenerRegistration = userAchievementsCollection
-            .whereEqualTo("userId", userId)
-            .orderBy("earnedAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
+    fun observeUserAchievements(userId: String): Flow<List<UserAchievement>> = flow {
+        try {
+            // Pobierz z lokalnej bazy danych
+            val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
+            emit(achievements.map { mappers.toModel(it) })
 
-                if (snapshot == null) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
+            // Jeśli jest sieć, pobierz również z Firebase i zaktualizuj lokalną bazę
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.getUserAchievements(userId)
 
-                val achievements = snapshot.documents.map { doc ->
-                    UserAchievement.fromMap(doc.id, doc.data ?: mapOf())
-                }
+                if (remoteResult.isSuccess) {
+                    val remoteAchievements = remoteResult.getOrNull()!!
 
-                // Emituj wynik
-                trySend(achievements)
+                    // Zapisz osiągnięcia lokalnie
+                    val entities = remoteAchievements.map { mappers.toEntity(it) }
+                    userAchievementDao.insertUserAchievements(entities)
+
+                    // Emituj zaktualizowane dane
+                    val updatedAchievements = userAchievementDao.getUserAchievementsByUserId(userId)
+                    emit(updatedAchievements.map { mappers.toModel(it) })
+                }
             }
-
-        // Zamknij listener po zakończeniu flow
-        awaitClose {
-            listenerRegistration.remove()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error observing user achievements", e)
+            // W przypadku błędu, emitujemy pustą listę
+            emit(emptyList())
         }
     }
 }

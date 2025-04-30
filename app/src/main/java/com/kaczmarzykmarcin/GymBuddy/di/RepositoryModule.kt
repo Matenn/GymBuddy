@@ -4,12 +4,17 @@ import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.gson.Gson
+import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
 import com.kaczmarzykmarcin.GymBuddy.data.repository.AchievementRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.ExerciseRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.ExerciseJsonParser
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.dao.ExerciseDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.*
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -42,26 +47,85 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideAchievementRepository(firestore: FirebaseFirestore): AchievementRepository {
-        return AchievementRepository(firestore)
+    fun provideUserMappers(gson: Gson): UserMappers {
+        return UserMappers(gson)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRemoteUserDataSource(
+        firestore: FirebaseFirestore,
+        auth: FirebaseAuth
+    ): RemoteUserDataSource {
+        return RemoteUserDataSource(firestore, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSyncManager(
+        @ApplicationContext context: Context,
+        userDao: UserDao,
+        userAuthDao: UserAuthDao,
+        userProfileDao: UserProfileDao,
+        userStatsDao: UserStatsDao,
+        userAchievementDao: UserAchievementDao,
+        workoutTemplateDao: WorkoutTemplateDao,
+        workoutDao: WorkoutDao,
+        remoteDataSource: RemoteUserDataSource,
+        mappers: UserMappers,
+        networkManager: NetworkConnectivityManager
+    ): SyncManager {
+        return SyncManager(
+            context, userDao, userAuthDao, userProfileDao, userStatsDao,
+            userAchievementDao, workoutTemplateDao, workoutDao, remoteDataSource, mappers, networkManager
+        )
+    }
+
+    @Provides
+    @Singleton
+    fun provideAchievementRepository(
+        userAchievementDao: UserAchievementDao,
+        remoteDataSource: RemoteUserDataSource,
+        syncManager: SyncManager,
+        networkManager: NetworkConnectivityManager,
+        mappers: UserMappers
+    ): AchievementRepository {
+        return AchievementRepository(userAchievementDao, remoteDataSource, syncManager, networkManager, mappers)
     }
 
     @Provides
     @Singleton
     fun provideUserRepository(
-        firestore: FirebaseFirestore,
         auth: FirebaseAuth,
-        achievementRepository: AchievementRepository
+        remoteDataSource: RemoteUserDataSource,
+        userDao: UserDao,
+        userAuthDao: UserAuthDao,
+        userProfileDao: UserProfileDao,
+        userStatsDao: UserStatsDao,
+        userAchievementDao: UserAchievementDao,
+        syncManager: SyncManager,
+        mappers: UserMappers
     ): UserRepository {
-        return UserRepository(firestore, auth, achievementRepository)
+        return UserRepository(
+            auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
+            userStatsDao, userAchievementDao, syncManager, mappers
+        )
     }
 
     @Provides
     @Singleton
     fun provideWorkoutRepository(
-        firestore: FirebaseFirestore,
-        exerciseRepository: ExerciseRepository
+        exerciseRepository: ExerciseRepository,
+        workoutDao: WorkoutDao,
+        workoutTemplateDao: WorkoutTemplateDao,
+        remoteDataSource: RemoteUserDataSource,
+        syncManager: SyncManager,
+        networkManager: NetworkConnectivityManager,
+        mappers: UserMappers
     ): WorkoutRepository {
-        return WorkoutRepository(firestore, exerciseRepository)
+        return WorkoutRepository(
+            exerciseRepository, workoutDao, workoutTemplateDao,
+            remoteDataSource, syncManager, networkManager, mappers
+        )
     }
 }

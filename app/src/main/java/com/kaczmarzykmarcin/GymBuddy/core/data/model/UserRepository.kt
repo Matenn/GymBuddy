@@ -1,111 +1,81 @@
 package com.kaczmarzykmarcin.GymBuddy.data.repository
 
-
 import android.util.Log
-import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.firestore.FirebaseFirestore
 import com.kaczmarzykmarcin.GymBuddy.data.model.*
-import kotlinx.coroutines.tasks.await
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.*
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Repozytorium do zarządzania danymi użytkownika, które integruje wszystkie podkomponenty.
+ * Repozytorium do zarządzania danymi użytkownika z obsługą lokalnego i zdalnego źródła danych.
+ * Domyślnie operacje odczytują i zapisują do lokalnej bazy danych, a synchronizacja
+ * z serwerem Firebase odbywa się w tle poprzez SyncManager.
  */
 @Singleton
 class UserRepository @Inject constructor(
-    private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth,
-    private val achievementRepository: AchievementRepository
+    private val remoteDataSource: RemoteUserDataSource,
+    private val userDao: UserDao,
+    private val userAuthDao: UserAuthDao,
+    private val userProfileDao: UserProfileDao,
+    private val userStatsDao: UserStatsDao,
+    private val userAchievementDao: UserAchievementDao,
+    private val syncManager: SyncManager,
+    private val mappers: UserMappers
 ) {
-    private val usersCollection = firestore.collection("users")
-    private val userAuthCollection = firestore.collection("userAuth")
-    private val userProfilesCollection = firestore.collection("userProfiles")
-    private val userStatsCollection = firestore.collection("userStats")
     private val TAG = "UserRepository"
 
     /**
-     * Tworzy nowego użytkownika z wszystkimi powiązanymi dokumentami.
+     * Tworzy nowego użytkownika we wszystkich niezbędnych bazach danych.
+     * Zapisuje dane lokalnie i uruchamia ich synchronizację z serwerem.
      */
     suspend fun createUser(firebaseUser: FirebaseUser): Result<User> {
         return try {
-            // Log to track the process
             Log.d(TAG, "Creating new user: ${firebaseUser.uid}")
 
-            // Check if user already exists to avoid duplication
-            val existingUserDoc = usersCollection.document(firebaseUser.uid).get().await()
-            if (existingUserDoc.exists()) {
-                Log.d(TAG, "User already exists, returning existing user")
-                val existingUser = User.fromMap(existingUserDoc.id, existingUserDoc.data ?: mapOf())
-                return Result.success(existingUser)
+            // Sprawdź, czy użytkownik istnieje lokalnie
+            val existingUser = userDao.getUserById(firebaseUser.uid)
+            if (existingUser != null) {
+                Log.d(TAG, "User already exists locally, returning existing user")
+                val user = mappers.toModel(existingUser)
+                return Result.success(user)
             }
 
-            // Use transaction to create user documents
-            val user = firestore.runTransaction { transaction ->
-                // 1. Utwórz UserAuth
-                val userAuth = UserAuth(
-                    email = firebaseUser.email ?: "",
-                    provider = determineProvider(firebaseUser),
-                    createdAt = Timestamp.now(),
-                    lastLogin = Timestamp.now()
-                )
-                val authDocRef = userAuthCollection.document()
-                val userAuthWithId = userAuth.copy(id = authDocRef.id)
-                transaction.set(authDocRef, userAuthWithId.toMap())
-                Log.d(TAG, "Created UserAuth with ID: ${authDocRef.id}")
+            // Jeśli nie istnieje lokalnie, spróbuj pobrać z Firebase
+            val remoteUserResult = remoteDataSource.getUser(firebaseUser.uid)
 
-                // 2. Utwórz UserProfile
-                val userProfile = UserProfile(
-                    userId = firebaseUser.uid,
-                    displayName = firebaseUser.displayName ?: "",
-                    photoUrl = firebaseUser.photoUrl?.toString()
-                )
-                val profileDocRef = userProfilesCollection.document()
-                val userProfileWithId = userProfile.copy(id = profileDocRef.id)
-                transaction.set(profileDocRef, userProfileWithId.toMap())
-                Log.d(TAG, "Created UserProfile with ID: ${profileDocRef.id}")
-
-                // 3. Utwórz UserStats
-                val userStats = UserStats(
-                    userId = firebaseUser.uid
-                )
-                val statsDocRef = userStatsCollection.document()
-                val userStatsWithId = userStats.copy(id = statsDocRef.id)
-                transaction.set(statsDocRef, userStatsWithId.toMap())
-                Log.d(TAG, "Created UserStats with ID: ${statsDocRef.id}")
-
-                // 4. Utwórz główny dokument User łączący wszystkie informacje
-                val user = User(
-                    id = firebaseUser.uid,
-                    authId = userAuthWithId.id,
-                    profileId = userProfileWithId.id,
-                    statsId = userStatsWithId.id
-                )
-                transaction.set(usersCollection.document(firebaseUser.uid), user.toMap())
-                Log.d(TAG, "Created main User document with ID: ${firebaseUser.uid}")
-
-                // Return the user object so we can access it after the transaction
-                user
-            }.await()
-
-            // 5. Przyznaj osiągnięcie za pierwszy trening (outside the transaction)
-            try {
-                achievementRepository.addAchievementForUser(firebaseUser.uid, Achievement.FIRST_WORKOUT.id)
-                Log.d(TAG, "Added first workout achievement")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to add achievement but user was created", e)
-                // Don't fail the whole operation if just the achievement fails
+            if (remoteUserResult.isSuccess) {
+                Log.d(TAG, "User exists remotely, downloading user data")
+                // Użytkownik istnieje w Firebase, pobierz pełne dane
+                val remoteUser = remoteUserResult.getOrNull()!!
+                downloadFullUserData(firebaseUser.uid)
+                return Result.success(remoteUser)
             }
 
-            Result.success(user)
+            // Użytkownik nie istnieje ani lokalnie, ani zdalnie - utwórz nowego
+            Log.d(TAG, "Creating new user in Firebase")
+            val remoteCreateResult = remoteDataSource.createUser(firebaseUser)
+
+            if (remoteCreateResult.isFailure) {
+                return remoteCreateResult
+            }
+
+            val newUser = remoteCreateResult.getOrNull()!!
+
+            // Pobierz pełne dane użytkownika z Firebase
+            downloadFullUserData(firebaseUser.uid)
+
+            // Dodaj pierwsze osiągnięcie lokalnie i zsynchronizuj
+            addAchievementForUser(firebaseUser.uid, Achievement.FIRST_WORKOUT.id)
+
+            Result.success(newUser)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create user", e)
             Result.failure(e)
@@ -113,67 +83,72 @@ class UserRepository @Inject constructor(
     }
 
     /**
-     * Pobiera główny dokument User z wszystkimi powiązanymi dokumentami.
+     * Pobiera pełne dane użytkownika, najpierw z lokalnej bazy danych,
+     * a jeśli nie są dostępne, to z Firebase.
      */
     suspend fun getFullUserData(userId: String): Result<UserData> {
-        return try {
-            Log.d(TAG, "Getting full user data for: $userId")
+        Log.d(TAG, "Getting full user data for: $userId")
 
-            // 1. Pobierz główny dokument User
-            val userDoc = usersCollection.document(userId).get().await()
-            if (!userDoc.exists()) {
-                Log.e(TAG, "User not found: $userId")
-                return Result.failure(Exception("User not found"))
+        try {
+            // Próba pobrania z lokalnej bazy danych
+            val localUserData = getLocalUserData(userId)
+
+            if (localUserData != null) {
+                Log.d(TAG, "Retrieved user data from local database")
+                return Result.success(localUserData)
             }
 
-            val user = User.fromMap(userDoc.id, userDoc.data ?: mapOf())
-            Log.d(TAG, "Retrieved User: ${user.id}, Auth: ${user.authId}, Profile: ${user.profileId}, Stats: ${user.statsId}")
-
-            // 2. Pobierz UserAuth
-            val userAuthDoc = userAuthCollection.document(user.authId).get().await()
-            if (!userAuthDoc.exists()) {
-                Log.e(TAG, "User auth data not found: ${user.authId}")
-                return Result.failure(Exception("User auth data not found"))
-            }
-
-            val userAuth = UserAuth.fromMap(userAuthDoc.id, userAuthDoc.data ?: mapOf())
-
-            // 3. Pobierz UserProfile
-            val userProfileDoc = userProfilesCollection.document(user.profileId).get().await()
-            if (!userProfileDoc.exists()) {
-                Log.e(TAG, "User profile not found: ${user.profileId}")
-                return Result.failure(Exception("User profile not found"))
-            }
-
-            val userProfile = UserProfile.fromMap(userProfileDoc.id, userProfileDoc.data ?: mapOf())
-
-            // 4. Pobierz UserStats
-            val userStatsDoc = userStatsCollection.document(user.statsId).get().await()
-            if (!userStatsDoc.exists()) {
-                Log.e(TAG, "User stats not found: ${user.statsId}")
-                return Result.failure(Exception("User stats not found"))
-            }
-
-            val userStats = UserStats.fromMap(userStatsDoc.id, userStatsDoc.data ?: mapOf())
-
-            // 5. Pobierz osiągnięcia użytkownika
-            val achievementsResult = achievementRepository.getUserAchievements(userId)
-            val achievements = achievementsResult.getOrDefault(emptyList())
-            Log.d(TAG, "Retrieved ${achievements.size} achievements for user")
-
-            // 6. Utwórz i zwróć pełny obiekt UserData
-            val userData = UserData(
-                user = user,
-                auth = userAuth,
-                profile = userProfile,
-                stats = userStats,
-                achievements = achievements
-            )
-
-            Log.d(TAG, "Successfully retrieved full user data")
-            Result.success(userData)
+            // Jeśli nie ma danych lokalnie, pobierz z Firebase i zapisz lokalnie
+            Log.d(TAG, "Local user data not found, downloading from Firebase")
+            return downloadFullUserData(userId)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get full user data", e)
+            return Result.failure(e)
+        }
+    }
+
+    /**
+     * Pobiera dane użytkownika z lokalnej bazy danych.
+     */
+    private suspend fun getLocalUserData(userId: String): UserData? {
+        val user = userDao.getUserById(userId) ?: return null
+        val userAuth = userAuthDao.getUserAuthById(user.authId) ?: return null
+        val userProfile = userProfileDao.getUserProfileById(user.profileId) ?: return null
+        val userStats = userStatsDao.getUserStatsById(user.statsId) ?: return null
+        val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
+
+        return mappers.toUserData(user, userAuth, userProfile, userStats, achievements)
+    }
+
+    /**
+     * Pobiera pełne dane użytkownika z Firebase i zapisuje lokalnie.
+     */
+    private suspend fun downloadFullUserData(userId: String): Result<UserData> {
+        return try {
+            val remoteResult = remoteDataSource.getFullUserData(userId)
+
+            if (remoteResult.isSuccess) {
+                val userData = remoteResult.getOrNull()!!
+
+                // Zapisz dane lokalnie
+                userDao.insertUser(mappers.toEntity(userData.user))
+                userAuthDao.insertUserAuth(mappers.toEntity(userData.auth))
+                userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
+                userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
+
+                val achievementEntities = userData.achievements.map {
+                    mappers.toEntity(it)
+                }
+                userAchievementDao.insertUserAchievements(achievementEntities)
+
+                Log.d(TAG, "Successfully downloaded and saved user data locally")
+                Result.success(userData)
+            } else {
+                Log.e(TAG, "Failed to get user data from Firebase", remoteResult.exceptionOrNull())
+                remoteResult
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading full user data", e)
             Result.failure(e)
         }
     }
@@ -184,51 +159,34 @@ class UserRepository @Inject constructor(
     suspend fun updateLastLogin(userId: String): Result<Unit> {
         return try {
             Log.d(TAG, "Updating last login for user: $userId")
-            val userResult = getUser(userId)
-            if (userResult.isFailure) {
-                Log.e(TAG, "Failed to get user for updating last login", userResult.exceptionOrNull())
-                return Result.failure(userResult.exceptionOrNull() ?: Exception("Unknown error"))
+
+            // Pobierz użytkownika
+            val user = userDao.getUserById(userId)
+            if (user == null) {
+                Log.e(TAG, "User not found for updating last login")
+                return Result.failure(Exception("User not found"))
             }
 
-            val user = userResult.getOrNull()!!
-            val userAuthDoc = userAuthCollection.document(user.authId)
-            val userAuthData = userAuthDoc.get().await().data
-
-            if (userAuthData != null) {
-                val userAuth = UserAuth.fromMap(user.authId, userAuthData)
-                val updatedUserAuth = userAuth.updateLastLogin()
-                userAuthDoc.update("lastLogin", updatedUserAuth.lastLogin).await()
-                Log.d(TAG, "Last login updated successfully")
-            } else {
-                Log.e(TAG, "User auth data is null for ID: ${user.authId}")
+            // Pobierz dane auth
+            val userAuth = userAuthDao.getUserAuthById(user.authId)
+            if (userAuth == null) {
+                Log.e(TAG, "User auth not found for ID: ${user.authId}")
                 return Result.failure(Exception("User auth data not found"))
             }
+
+            // Aktualizuj czas logowania
+            val updatedUserAuth = mappers.toModel(userAuth).updateLastLogin()
+            val updatedEntity = mappers.toEntity(updatedUserAuth, true)
+
+            // Zapisz lokalnie
+            userAuthDao.updateUserAuth(updatedEntity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
 
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update last login", e)
-            Result.failure(e)
-        }
-    }
-
-
-    /**
-     * Pobiera podstawowy dokument User.
-     */
-    suspend fun getUser(userId: String): Result<User> {
-        return try {
-            Log.d(TAG, "Getting user document for: $userId")
-            val userDoc = usersCollection.document(userId).get().await()
-            if (userDoc.exists()) {
-                val user = User.fromMap(userDoc.id, userDoc.data ?: mapOf())
-                Log.d(TAG, "User document retrieved successfully")
-                Result.success(user)
-            } else {
-                Log.e(TAG, "User not found: $userId")
-                Result.failure(Exception("User not found"))
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get user", e)
             Result.failure(e)
         }
     }
@@ -238,23 +196,42 @@ class UserRepository @Inject constructor(
      */
     suspend fun updateUserProfile(userId: String, updates: Map<String, Any?>): Result<UserProfile> {
         return try {
-            val userResult = getUser(userId)
-            if (userResult.isFailure) {
-                return Result.failure(userResult.exceptionOrNull() ?: Exception("Unknown error"))
+            // Pobierz użytkownika
+            val user = userDao.getUserById(userId)
+            if (user == null) {
+                Log.e(TAG, "User not found for updating profile")
+                return Result.failure(Exception("User not found"))
             }
 
-            val user = userResult.getOrNull()!!
-            val profileDoc = userProfilesCollection.document(user.profileId)
-            profileDoc.update(updates).await()
+            // Pobierz profil
+            val userProfileEntity = userProfileDao.getUserProfileById(user.profileId)
+            if (userProfileEntity == null) {
+                Log.e(TAG, "User profile not found for ID: ${user.profileId}")
+                return Result.failure(Exception("User profile not found"))
+            }
 
-            val updatedProfileDoc = profileDoc.get().await()
-            val updatedProfile = UserProfile.fromMap(
-                updatedProfileDoc.id,
-                updatedProfileDoc.data ?: mapOf()
+            // Konwertuj na model
+            val userProfile = mappers.toModel(userProfileEntity)
+
+            // Utwórz nowy profil z aktualizacjami
+            val updatedProfile = UserProfile(
+                id = userProfile.id,
+                userId = userProfile.userId,
+                displayName = updates["displayName"] as? String ?: userProfile.displayName,
+                photoUrl = updates["photoUrl"] as? String ?: userProfile.photoUrl,
+                favoriteBodyPart = updates["favoriteBodyPart"] as? String ?: userProfile.favoriteBodyPart
             )
+
+            // Zapisz lokalnie
+            val updatedEntity = mappers.toEntity(updatedProfile, true)
+            userProfileDao.updateUserProfile(updatedEntity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
 
             Result.success(updatedProfile)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update user profile", e)
             Result.failure(e)
         }
     }
@@ -264,48 +241,146 @@ class UserRepository @Inject constructor(
      */
     suspend fun addUserXp(userId: String, xpAmount: Int): Result<UserStats> {
         return try {
-            val userResult = getUser(userId)
-            if (userResult.isFailure) {
-                return Result.failure(userResult.exceptionOrNull() ?: Exception("Unknown error"))
+            // Pobierz użytkownika
+            val user = userDao.getUserById(userId)
+            if (user == null) {
+                Log.e(TAG, "User not found for adding XP")
+                return Result.failure(Exception("User not found"))
             }
 
-            val user = userResult.getOrNull()!!
-            val statsDoc = userStatsCollection.document(user.statsId)
-            val statsData = statsDoc.get().await().data
-
-            if (statsData != null) {
-                val stats = UserStats.fromMap(user.statsId, statsData)
-                val updatedXp = stats.xp + xpAmount
-
-                // Oblicz nowy poziom
-                val currentLevel = stats.level
-                val calculatedLevel = stats.calculateLevel()
-
-                // Aktualizuj statystyki użytkownika
-                val updates = mutableMapOf<String, Any>(
-                    "xp" to updatedXp
-                )
-
-                // Jeśli poziom się zmienił, zaktualizuj go
-                if (calculatedLevel > currentLevel) {
-                    updates["level"] = calculatedLevel
-                }
-
-                statsDoc.update(updates).await()
-
-                // Pobierz i zwróć zaktualizowane statystyki
-                val updatedStatsDoc = statsDoc.get().await()
-                val updatedStats = UserStats.fromMap(
-                    updatedStatsDoc.id,
-                    updatedStatsDoc.data ?: mapOf()
-                )
-
-                Result.success(updatedStats)
-            } else {
-                Result.failure(Exception("User stats not found"))
+            // Pobierz statystyki
+            val userStatsEntity = userStatsDao.getUserStatsById(user.statsId)
+            if (userStatsEntity == null) {
+                Log.e(TAG, "User stats not found for ID: ${user.statsId}")
+                return Result.failure(Exception("User stats not found"))
             }
+
+            // Konwertuj na model
+            val userStats = mappers.toModel(userStatsEntity)
+
+            // Aktualizuj XP
+            val updatedXp = userStats.xp + xpAmount
+
+            // Oblicz nowy poziom
+            val currentLevel = userStats.level
+            val calculatedLevel = userStats.calculateLevel()
+
+            // Aktualizuj model
+            val updatedStats = userStats.copy(
+                xp = updatedXp,
+                level = if (calculatedLevel > currentLevel) calculatedLevel else currentLevel
+            )
+
+            // Zapisz lokalnie
+            val updatedEntity = mappers.toEntity(updatedStats, true)
+            userStatsDao.updateUserStats(updatedEntity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
+            Result.success(updatedStats)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to add user XP", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Pobiera statystyki użytkownika.
+     */
+    suspend fun getUserStats(userId: String): Result<UserStats> {
+        return try {
+            // Pobierz użytkownika
+            val user = userDao.getUserById(userId)
+            if (user == null) {
+                Log.e(TAG, "User not found for getting stats")
+                return Result.failure(Exception("User not found"))
+            }
+
+            // Pobierz statystyki
+            val userStatsEntity = userStatsDao.getUserStatsById(user.statsId)
+            if (userStatsEntity == null) {
+                Log.e(TAG, "User stats not found for ID: ${user.statsId}")
+                return Result.failure(Exception("User stats not found"))
+            }
+
+            // Konwertuj na model
+            val userStats = mappers.toModel(userStatsEntity)
+
+            Result.success(userStats)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get user stats", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Dodaje osiągnięcie użytkownikowi.
+     */
+    suspend fun addAchievementForUser(userId: String, achievementId: Int): Result<UserAchievement> {
+        return try {
+            // Sprawdź, czy użytkownik już ma to osiągnięcie
+            val existingAchievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
+            if (existingAchievement != null) {
+                Log.d(TAG, "User already has achievement $achievementId")
+                return Result.success(mappers.toModel(existingAchievement))
+            }
+
+            // Sprawdź, czy osiągnięcie istnieje
+            val achievement = Achievement.getById(achievementId)
+            if (achievement == null) {
+                Log.e(TAG, "Achievement with ID $achievementId does not exist")
+                return Result.failure(IllegalArgumentException("Achievement with ID $achievementId does not exist"))
+            }
+
+            // Utwórz nowe osiągnięcie
+            val userAchievement = UserAchievement(
+                userId = userId,
+                achievementId = achievementId
+            )
+
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(userAchievement, true)
+            val generatedId = java.util.UUID.randomUUID().toString()
+            val entityWithId = entity.copy(id = generatedId)
+            userAchievementDao.insertUserAchievement(entityWithId)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
+            // Przyznaj XP za osiągnięcie
+            addUserXp(userId, achievement.xpReward)
+
+            Result.success(mappers.toModel(entityWithId))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add achievement", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Pobiera wszystkie osiągnięcia użytkownika.
+     */
+    suspend fun getUserAchievements(userId: String): Result<List<UserAchievement>> {
+        return try {
+            val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
+            Result.success(achievements.map { mappers.toModel(it) })
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get user achievements", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Sprawdza, czy użytkownik posiada dane osiągnięcie.
+     */
+    suspend fun hasAchievement(userId: String, achievementId: Int): Boolean {
+        return try {
+            val achievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
+            achievement != null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for achievement", e)
+            false
         }
     }
 
@@ -317,91 +392,95 @@ class UserRepository @Inject constructor(
         completedWorkout: CompletedWorkout
     ): Result<UserStats> {
         return try {
-            val userResult = getUser(userId)
-            if (userResult.isFailure) {
-                return Result.failure(userResult.exceptionOrNull() ?: Exception("Unknown error"))
+            // Pobierz użytkownika
+            val user = userDao.getUserById(userId)
+            if (user == null) {
+                Log.e(TAG, "User not found for updating stats after workout")
+                return Result.failure(Exception("User not found"))
             }
 
-            val user = userResult.getOrNull()!!
-            val statsDoc = userStatsCollection.document(user.statsId)
-            val statsData = statsDoc.get().await().data
+            // Pobierz statystyki
+            val userStatsEntity = userStatsDao.getUserStatsById(user.statsId)
+            if (userStatsEntity == null) {
+                Log.e(TAG, "User stats not found for ID: ${user.statsId}")
+                return Result.failure(Exception("User stats not found"))
+            }
 
-            if (statsData != null && completedWorkout.endTime != null) {
-                val stats = UserStats.fromMap(user.statsId, statsData)
+            // Konwertuj na model
+            val stats = mappers.toModel(userStatsEntity)
 
-                // Oblicz serię treningów
-                var currentStreak = stats.currentStreak
-                var longestStreak = stats.longestStreak
+            if (completedWorkout.endTime == null) {
+                return Result.failure(Exception("Workout not completed"))
+            }
 
-                // Jeśli to pierwszy trening lub ostatni trening był wczoraj, zwiększ serię
-                if (stats.lastWorkoutDate == null) {
-                    currentStreak = 1
-                } else {
-                    val lastWorkoutDay = stats.lastWorkoutDate.toDate().time / (24 * 60 * 60 * 1000)
-                    val today = completedWorkout.endTime.toDate().time / (24 * 60 * 60 * 1000)
+            // Oblicz serię treningów
+            var currentStreak = stats.currentStreak
+            var longestStreak = stats.longestStreak
 
-                    if (today - lastWorkoutDay == 1L) {
-                        // Trening był wczoraj, zwiększ serię
-                        currentStreak++
-                    } else if (today - lastWorkoutDay > 1L) {
-                        // Seria przerwana, zacznij od 1
-                        currentStreak = 1
-                    }
-                    // W przeciwnym przypadku (trening tego samego dnia) nie zmieniaj serii
-                }
-
-                // Aktualizuj najdłuższą serię jeśli potrzeba
-                if (currentStreak > longestStreak) {
-                    longestStreak = currentStreak
-                }
-
-                // Aktualizuj statystyki ćwiczeń
-                val updatedExerciseStats = updateExerciseStats(stats.exerciseStats, completedWorkout)
-
-                // Aktualizuj statystyki kategorii treningów
-                val workoutCategories = completedWorkout.exercises.map { it.category }.distinct()
-                val updatedWorkoutTypeStats = mutableMapOf<String, WorkoutTypeStat>()
-                workoutCategories.forEach { category ->
-                    val existingStat = stats.workoutTypeStats[category] ?: WorkoutTypeStat()
-                    updatedWorkoutTypeStats[category] = existingStat.copy(
-                        count = existingStat.count + 1,
-                        totalTime = existingStat.totalTime + completedWorkout.duration,
-                        lastPerformedAt = completedWorkout.endTime
-                    )
-                }
-
-                // Przygotuj aktualizacje
-                val updates = mapOf(
-                    "totalWorkoutsCompleted" to stats.totalWorkoutsCompleted + 1,
-                    "currentStreak" to currentStreak,
-                    "longestStreak" to longestStreak,
-                    "lastWorkoutDate" to completedWorkout.endTime,
-                    "totalWorkoutTime" to stats.totalWorkoutTime + completedWorkout.duration,
-                    "workoutTypeStats" to (stats.workoutTypeStats + updatedWorkoutTypeStats).mapValues { it.value.toMap() },
-                    "exerciseStats" to updatedExerciseStats.mapValues { it.value.toMap() }
-                )
-
-                // Aktualizuj dokument
-                statsDoc.update(updates).await()
-
-                // Dodaj XP za ukończony trening
-                addUserXp(userId, 50)
-
-                // Sprawdź osiągnięcia
-                checkWorkoutAchievements(userId, stats, currentStreak)
-
-                // Pobierz i zwróć zaktualizowane statystyki
-                val updatedStatsDoc = statsDoc.get().await()
-                val updatedStats = UserStats.fromMap(
-                    updatedStatsDoc.id,
-                    updatedStatsDoc.data ?: mapOf()
-                )
-
-                Result.success(updatedStats)
+            // Jeśli to pierwszy trening lub ostatni trening był wczoraj, zwiększ serię
+            if (stats.lastWorkoutDate == null) {
+                currentStreak = 1
             } else {
-                Result.failure(Exception("User stats not found or workout not completed"))
+                val lastWorkoutDay = stats.lastWorkoutDate.toDate().time / (24 * 60 * 60 * 1000)
+                val today = completedWorkout.endTime.toDate().time / (24 * 60 * 60 * 1000)
+
+                if (today - lastWorkoutDay == 1L) {
+                    // Trening był wczoraj, zwiększ serię
+                    currentStreak++
+                } else if (today - lastWorkoutDay > 1L) {
+                    // Seria przerwana, zacznij od 1
+                    currentStreak = 1
+                }
+                // W przeciwnym przypadku (trening tego samego dnia) nie zmieniaj serii
             }
+
+            // Aktualizuj najdłuższą serię jeśli potrzeba
+            if (currentStreak > longestStreak) {
+                longestStreak = currentStreak
+            }
+
+            // Aktualizuj statystyki ćwiczeń
+            val updatedExerciseStats = updateExerciseStats(stats.exerciseStats, completedWorkout)
+
+            // Aktualizuj statystyki kategorii treningów
+            val workoutCategories = completedWorkout.exercises.map { it.category }.distinct()
+            val updatedWorkoutTypeStats = mutableMapOf<String, WorkoutTypeStat>()
+            workoutCategories.forEach { category ->
+                val existingStat = stats.workoutTypeStats[category] ?: WorkoutTypeStat()
+                updatedWorkoutTypeStats[category] = existingStat.copy(
+                    count = existingStat.count + 1,
+                    totalTime = existingStat.totalTime + completedWorkout.duration,
+                    lastPerformedAt = completedWorkout.endTime
+                )
+            }
+
+            // Aktualizuj model
+            val updatedStats = stats.copy(
+                totalWorkoutsCompleted = stats.totalWorkoutsCompleted + 1,
+                currentStreak = currentStreak,
+                longestStreak = longestStreak,
+                lastWorkoutDate = completedWorkout.endTime,
+                totalWorkoutTime = stats.totalWorkoutTime + completedWorkout.duration,
+                workoutTypeStats = stats.workoutTypeStats + updatedWorkoutTypeStats,
+                exerciseStats = updatedExerciseStats
+            )
+
+            // Zapisz lokalnie
+            val updatedEntity = mappers.toEntity(updatedStats, true)
+            userStatsDao.updateUserStats(updatedEntity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
+            // Dodaj XP za ukończony trening
+            addUserXp(userId, 50)
+
+            // Sprawdź osiągnięcia
+            checkWorkoutAchievements(userId, stats, currentStreak)
+
+            Result.success(updatedStats)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update user stats after workout", e)
             Result.failure(e)
         }
     }
@@ -485,115 +564,32 @@ class UserRepository @Inject constructor(
     ) {
         // Sprawdź osiągnięcie za serię treningów (3 dni)
         if (currentStreak >= 3) {
-            if (!achievementRepository.hasAchievement(userId, Achievement.WORKOUT_STREAK_3.id)) {
-                achievementRepository.addAchievementForUser(userId, Achievement.WORKOUT_STREAK_3.id)
-                addUserXp(userId, Achievement.WORKOUT_STREAK_3.xpReward)
+            if (!hasAchievement(userId, Achievement.WORKOUT_STREAK_3.id)) {
+                addAchievementForUser(userId, Achievement.WORKOUT_STREAK_3.id)
             }
         }
 
         // Sprawdź osiągnięcie za serię treningów (7 dni)
         if (currentStreak >= 7) {
-            if (!achievementRepository.hasAchievement(userId, Achievement.WORKOUT_STREAK_7.id)) {
-                achievementRepository.addAchievementForUser(userId, Achievement.WORKOUT_STREAK_7.id)
-                addUserXp(userId, Achievement.WORKOUT_STREAK_7.xpReward)
+            if (!hasAchievement(userId, Achievement.WORKOUT_STREAK_7.id)) {
+                addAchievementForUser(userId, Achievement.WORKOUT_STREAK_7.id)
             }
         }
 
         // Sprawdź osiągnięcie za 10 ukończonych treningów
         if (stats.totalWorkoutsCompleted + 1 >= 10) {
-            if (!achievementRepository.hasAchievement(userId, Achievement.WORKOUT_COUNT_10.id)) {
-                achievementRepository.addAchievementForUser(userId, Achievement.WORKOUT_COUNT_10.id)
-                addUserXp(userId, Achievement.WORKOUT_COUNT_10.xpReward)
+            if (!hasAchievement(userId, Achievement.WORKOUT_COUNT_10.id)) {
+                addAchievementForUser(userId, Achievement.WORKOUT_COUNT_10.id)
             }
         }
 
         // Sprawdź osiągnięcie za poranne treningi
-        // (uproszczone - w rzeczywistości trzeba by sprawdzić godzinę dla każdego treningu)
-        if (!achievementRepository.hasAchievement(userId, Achievement.MORNING_BIRD.id)) {
+        if (!hasAchievement(userId, Achievement.MORNING_BIRD.id)) {
             // Logika sprawdzania porannych treningów mogłaby być bardziej złożona
             // Na potrzeby przykładu, przyznamy to osiągnięcie po 10 treningach
             if (stats.totalWorkoutsCompleted + 1 >= 10) {
-                achievementRepository.addAchievementForUser(userId, Achievement.MORNING_BIRD.id)
-                addUserXp(userId, Achievement.MORNING_BIRD.xpReward)
+                addAchievementForUser(userId, Achievement.MORNING_BIRD.id)
             }
         }
-    }
-
-    /**
-     * Obserwuje zmiany w danych użytkownika jako Flow.
-     */
-    fun observeUserData(userId: String): Flow<UserData> = flow {
-        try {
-            val userDoc = usersCollection.document(userId).get().await()
-            if (!userDoc.exists()) {
-                throw Exception("User not found")
-            }
-
-            val user = User.fromMap(userDoc.id, userDoc.data ?: mapOf())
-
-            val scope = CoroutineScope(Dispatchers.IO)
-
-            // Ustaw nasłuchiwanie na wszystkie dokumenty
-            val authListenerRegistration = userAuthCollection.document(user.authId)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
-                    scope.launch {
-                        updateUserDataFlow(userId)
-                    }
-                }
-
-            val profileListenerRegistration = userProfilesCollection.document(user.profileId)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
-                    scope.launch {
-                        updateUserDataFlow(userId)
-                    }
-                }
-
-            val statsListenerRegistration = userStatsCollection.document(user.statsId)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
-                    scope.launch {
-                        updateUserDataFlow(userId)
-                    }
-                }
-
-            // Czekaj na zakończenie flow
-            kotlinx.coroutines.currentCoroutineContext().job.invokeOnCompletion {
-                authListenerRegistration.remove()
-                profileListenerRegistration.remove()
-                statsListenerRegistration.remove()
-            }
-
-        } catch (e: Exception) {
-            // Obsługa błędów
-        }
-    }
-
-    /**
-     * Aktualizuje flow danych użytkownika po zmianie w Firestore.
-     */
-    private suspend fun updateUserDataFlow(userId: String) {
-        val userDataResult = getFullUserData(userId)
-        if (userDataResult.isSuccess) {
-            // trySend(userDataResult.getOrNull()!!)
-            // Użyłbyś trySend w rzeczywistej implementacji, tutaj pominięte dla uproszczenia
-        }
-    }
-
-    /**
-     * Określa dostawcę uwierzytelniania na podstawie danych FirebaseUser.
-     */
-    private fun determineProvider(firebaseUser: FirebaseUser): AuthProvider {
-        val providers = firebaseUser.providerData.mapNotNull {
-            when (it.providerId) {
-                "google.com" -> AuthProvider.GOOGLE
-                "facebook.com" -> AuthProvider.FACEBOOK
-                "password" -> AuthProvider.EMAIL
-                else -> null
-            }
-        }
-
-        return providers.firstOrNull() ?: AuthProvider.EMAIL
     }
 }

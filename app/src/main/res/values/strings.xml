@@ -32,6 +32,14 @@
     <string name="forgot_password">Zapomniałeś hasła?</string>
     <string name="reset_it">Zresetuj hasło</string>
 
+    <!-- Exercise List Screen -->
+    <string name="exercise_database">Baza ćwiczeń</string>
+    <string name="search_exercise">Wyszukaj ćwiczenie</string>
+    <string name="select_category">Wybierz kategorię</string>
+    <string name="select_muscle">Wybierz partię mięśniową</string>
+    <string name="all_categories">Wszystkie kategorie</string>
+    <string name="all_muscles">Wszystkie partie mięśniowe</string>
+    <string name="back">Wstecz</string>
 
     <!-- Dashboard Strings -->
     <string name="dashboard">Dashboard</string>
