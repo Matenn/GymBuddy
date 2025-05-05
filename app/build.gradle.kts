@@ -113,11 +113,13 @@ dependencies {
     implementation(libs.androidx.runtime)
     // You may also need these core Compose dependencies
     implementation(libs.androidx.ui)
-    implementation(libs.androidx.foundation)
+    implementation(platform("androidx.compose:compose-bom:2025.04.01"))
+
+    implementation("androidx.compose.foundation:foundation:1.8.0")
     implementation(libs.androidx.material)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
-    implementation ("androidx.compose.material3:material3:1.3.2")
+    implementation (libs.material3)
     implementation(libs.androidx.material.icons.extended)
     debugImplementation(libs.androidx.ui.tooling)
 

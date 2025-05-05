@@ -83,7 +83,12 @@ class ExerciseJsonParser @Inject constructor(
      * Konwertuje ExerciseJson na model Exercise
      */
     fun convertToModel(exerciseJson: ExerciseJson): Exercise {
-        val sortLetter = exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
+        // Sprawdzamy, czy nazwa zaczyna się od cyfry - jeśli tak, używamy "#" jako sortLetter
+        val sortLetter = when {
+            exerciseJson.name.firstOrNull()?.isDigit() == true -> "#"
+            else -> exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
+        }
+
         val category = exerciseJson.category ?: determineCategory(exerciseJson.primaryMuscles)
 
         // Obrazki - pełne ścieżki dostępu do zasobów
@@ -117,7 +122,12 @@ class ExerciseJsonParser @Inject constructor(
      * Konwertuje ExerciseJson na encję Room
      */
     fun convertToEntity(exerciseJson: ExerciseJson): ExerciseEntity {
-        val sortLetter = exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
+        // Sprawdzamy, czy nazwa zaczyna się od cyfry - jeśli tak, używamy "#" jako sortLetter
+        val sortLetter = when {
+            exerciseJson.name.firstOrNull()?.isDigit() == true -> "#"
+            else -> exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
+        }
+
         val category = exerciseJson.category ?: determineCategory(exerciseJson.primaryMuscles)
 
         // Obrazki - pełne ścieżki dostępu do zasobów

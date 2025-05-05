@@ -12,10 +12,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -109,7 +114,9 @@ fun DashboardScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(16.dp,0.dp,16.dp,16.dp)
+
+                .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
                 .verticalScroll(rememberScrollState())
         ) {
             // Header with profile icon
@@ -135,28 +142,27 @@ fun DashboardScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
+                // Add spacing between profile icon and text
+                Spacer(modifier = Modifier.width(16.dp))
 
-                // User settings - will be accessible from profile screen
-            }
+                // Column for greeting text
+                Column {
+                    userData?.let { user ->
+                        Text(
+                            text = "Cześć, ${user.profile.displayName.ifEmpty { "Imię" }}",
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Greeting with user's name
-            userData?.let { user ->
-                Text(
-                    text = "Cześć, ${user.profile.displayName.ifEmpty { "Imię" }}",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-
-                Text(
-                    text = "Czas na kolejny trening!",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        color = Color.Gray
-                    )
-                )
+                        Text(
+                            text = "Czas na kolejny trening!",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = Color.Gray
+                            )
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -611,7 +617,7 @@ fun BottomNavigationBar(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(Color.Red),
+                        .background(Color.Black),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

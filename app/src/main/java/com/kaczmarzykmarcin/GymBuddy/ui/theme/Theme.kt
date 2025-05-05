@@ -19,6 +19,7 @@ val Orange = Color(0xFFF5931E) // Kolor pomarańczowy widoczny w logo na makieci
 val Gray = Color(0xFFF2F2F2) // Kolor tła niektórych elementów
 val DarkGray = Color(0xFF757575) // Dla mniej istotnych tekstów
 val LightGray = Color(0xFFE0E0E0) // Dla dividerów i obramowań
+val LightGrayBackground = Color(0xFFEFF1F5) // Dla tła przycisków filtrowania
 
 val AppBackgroundLight = Color(0xFFFAFAFA)
 

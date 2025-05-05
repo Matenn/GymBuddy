@@ -40,6 +40,17 @@
     <string name="all_categories">Wszystkie kategorie</string>
     <string name="all_muscles">Wszystkie partie mięśniowe</string>
     <string name="back">Wstecz</string>
+    <string name="cancel">Anuluj</string>
+    <string name="apply">Zastosuj</string>
+    <string name="no_exercise_found">No exercise found</string>
+    <string name="choose_category">Choose category</string>
+    <string name="choose_body_part">Choose body part</string>
+    <string name="actve_filters">Active filters</string>
+    <string name="clear_filters">Clear filters</string>"
+    <string name="category_filter_title">Category</string>
+    <string name="body_part_filter_title">Body part</string>
+    <string name="search_field_exercise_text">Search exercise</string>
+
 
     <!-- Dashboard Strings -->
     <string name="dashboard">Dashboard</string>
@@ -70,4 +81,5 @@
     <string name="sunday_short">Nd</string>
 
     <string name="web_client_id">159103497230-arteo158i53h2pogohmtk039tg69vbdn.apps.googleusercontent.com</string>
+
 </resources>

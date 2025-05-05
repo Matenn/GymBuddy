@@ -27,6 +27,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.register.Registe
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.reset.PasswordResetScreen
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeScreen
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
 
 private const val TAG = "AppNavigation"
 
@@ -171,6 +172,36 @@ fun AppNavigation(navController: NavHostController) {
         ) {
             Log.d(TAG, "Loading DashboardScreen")
             DashboardScreen(navController, authViewModel)
+        }
+
+        composable(
+            route = "main",
+            enterTransition = {
+                // When entering main screen
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                // When leaving main screen
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading DashboardScreen")
+            DashboardScreen(navController, authViewModel)
+        }
+
+        composable(
+            route = NavigationRoutes.EXERCISES,
+            enterTransition = {
+                // When entering exercises screen
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                // When leaving exercises screen
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading ExerciseLibraryScreen")
+            ExerciseLibraryScreen(navController)
         }
     }
 }
