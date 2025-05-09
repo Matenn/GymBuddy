@@ -66,7 +66,7 @@
     <string name="duration">Czas trwania:</string>
     <string name="exercises_completed">Wykonane ćwiczenia:</string>
     <string name="see_details">Zobacz szczegóły</string>
-    <string name="start_new_workout">Rozpocznij nowy trening</string>
+
     <string name="no_workouts">Brak treningów</string>
     <string name="no_workouts_desc">Rozpocznij swój pierwszy trening, aby zobaczyć podsumowanie</string>
     <string name="progress">Postępy</string>
@@ -80,6 +80,38 @@
     <string name="saturday_short">Sb</string>
     <string name="sunday_short">Nd</string>
 
+    <!-- Workout Screen strings -->
+    <string name="quick_start">Szybki start</string>
+    <string name="planned_workouts">Zaplanowane treningi</string>
+    <string name="create_new_template">Stwórz nowy szablon</string>
+    <string name="edit_template">Edytuj szablon</string>
+    <string name="search_workout_placeholder">Wyszukaj zaplanowany trening</string>
+    <string name="start_new_workout">Rozpocznij nowy trening</string>
+
+    <!-- Training Recorder strings -->
+    <string name="finish">Zakończ</string>
+    <string name="cancel_workout">Anuluj trening</string>
+    <string name="cancel_workout_confirmation">Czy na pewno chcesz anulować ten trening? Wszystkie wprowadzone dane zostaną utracone.</string>
+    <string name="edit_workout_name">Edytuj nazwę treningu</string>
+    <string name="workout_name">Nazwa treningu</string>
+    <string name="add_exercise">Dodaj ćwiczenie</string>
+    <string name="add_exercise_to_start">Dodaj ćwiczenie, aby rozpocząć trening</string>
+    <string name="normal_set">Seria normalna</string>
+    <string name="warmup_set">Rozgrzewka</string>
+    <string name="dropset">Dropset</string>
+    <string name="failure_set">Do upadku</string>
+    <string name="add_set">Dodaj serię</string>
+    <string name="delete_set">Usuń serię</string>
+    <string name="select_exercises">Wybierz ćwiczenia</string>
+    <string name="add">Dodaj</string>
+    <string name="training">Trening</string>
+
+    <string name="select_muscle_group">Wybierz partię mięśniową</string>
+
     <string name="web_client_id">159103497230-arteo158i53h2pogohmtk039tg69vbdn.apps.googleusercontent.com</string>
+    <string name="confirm">Potwierdz</string>
+    <string name="save">Zapisz</string>
+    <string name="selected">Wybrane</string>
+    <string name="resume_workout">Resume workout</string>
 
 </resources>

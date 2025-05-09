@@ -629,7 +629,7 @@ fun BottomNavigationBar(
             },
             selected = false,
             onClick = {
-                navController.navigate(NavigationRoutes.START_WORKOUT)
+                navController.navigate(NavigationRoutes.WORKOUT_SCREEN)
             },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = Color.Black,

@@ -28,7 +28,8 @@ class UserRepository @Inject constructor(
     private val userStatsDao: UserStatsDao,
     private val userAchievementDao: UserAchievementDao,
     private val syncManager: SyncManager,
-    private val mappers: UserMappers
+    private val mappers: UserMappers,
+    private val workoutRepository: WorkoutRepository
 ) {
     private val TAG = "UserRepository"
 
@@ -125,10 +126,12 @@ class UserRepository @Inject constructor(
      */
     private suspend fun downloadFullUserData(userId: String): Result<UserData> {
         return try {
+            Log.d(TAG, "Starting to download full user data for user: $userId")
             val remoteResult = remoteDataSource.getFullUserData(userId)
 
             if (remoteResult.isSuccess) {
                 val userData = remoteResult.getOrNull()!!
+                Log.d(TAG, "Successfully fetched user data from Firebase")
 
                 // Zapisz dane lokalnie
                 userDao.insertUser(mappers.toEntity(userData.user))
@@ -140,6 +143,29 @@ class UserRepository @Inject constructor(
                     mappers.toEntity(it)
                 }
                 userAchievementDao.insertUserAchievements(achievementEntities)
+                Log.d(TAG, "Saved basic user data to local database")
+
+                // Synchronizuj również szablony treningów i historię treningów
+                try {
+                    Log.d(TAG, "Synchronizing workout templates and history for user: $userId")
+                    val templatesResult = workoutRepository.syncWorkoutTemplates(userId)
+                    val historyResult = workoutRepository.syncWorkoutHistory(userId)
+
+                    if (templatesResult.isSuccess) {
+                        Log.d(TAG, "Successfully synchronized workout templates: ${templatesResult.getOrNull()?.size} templates")
+                    } else {
+                        Log.e(TAG, "Failed to sync workout templates: ${templatesResult.exceptionOrNull()?.message}")
+                    }
+
+                    if (historyResult.isSuccess) {
+                        Log.d(TAG, "Successfully synchronized workout history: ${historyResult.getOrNull()?.size} workouts")
+                    } else {
+                        Log.e(TAG, "Failed to sync workout history: ${historyResult.exceptionOrNull()?.message}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error synchronizing workouts", e)
+                    // Kontynuuj mimo błędu, gdyż najważniejsze są dane użytkownika
+                }
 
                 Log.d(TAG, "Successfully downloaded and saved user data locally")
                 Result.success(userData)

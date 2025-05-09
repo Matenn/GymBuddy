@@ -132,6 +132,14 @@ class AuthViewModel @Inject constructor(
                     val result = userRepository.updateLastLogin(currentUser.uid)
                     if (result.isSuccess) {
                         Log.d(TAG, "Last login updated successfully")
+
+                        // Dodaj wywołanie synchronizacji treningów
+                        try {
+                            val userId = currentUser.uid
+                            userRepository.getFullUserData(userId) // To wywołanie powinno już synchronizować treningi
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error synchronizing workouts", e)
+                        }
                     } else {
                         Log.w(TAG, "Failed to update last login: ${result.exceptionOrNull()?.message}")
                     }

@@ -119,7 +119,7 @@ data class CompletedExercise(
  * Klasa reprezentująca pojedynczą serię ćwiczenia.
  */
 data class ExerciseSet(
-    val setType: String = "normal", // np. "W" - rozgrzewka, "1", "2" itp.
+    val setType: String = "normal", // "normal", "warmup", "dropset", "failure"
     val weight: Double = 0.0,       // ciężar w kg
     val reps: Int = 0               // liczba powtórzeń
 ) {
@@ -132,8 +132,19 @@ data class ExerciseSet(
     companion object {
         fun fromMap(map: Map<*, *>): ExerciseSet = ExerciseSet(
             setType = map["setType"] as? String ?: "normal",
-            weight = (map["weight"] as? Double) ?: 0.0,
-            reps = (map["reps"] as? Long)?.toInt() ?: 0
+            weight = when (val w = map["weight"]) {
+                is Double -> w
+                is Float -> w.toDouble()
+                is Int -> w.toDouble()
+                is Long -> w.toDouble()
+                else -> 0.0
+            },
+            reps = when (val r = map["reps"]) {
+                is Int -> r
+                is Long -> r.toInt()
+                is Double -> r.toInt()
+                is Float -> r.toInt()
+                else -> 0
+            }
         )
-    }
-}
+    }}

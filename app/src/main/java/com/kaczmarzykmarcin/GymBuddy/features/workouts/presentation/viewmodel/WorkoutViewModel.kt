@@ -1,0 +1,370 @@
+package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
+import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
+import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseStat
+import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
+import com.kaczmarzykmarcin.GymBuddy.data.repository.ExerciseRepository
+import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
+import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.Calendar
+import java.util.UUID
+import javax.inject.Inject
+
+@HiltViewModel
+class WorkoutViewModel @Inject constructor(
+    private val auth: FirebaseAuth,
+    private val exerciseRepository: ExerciseRepository,
+    private val workoutRepository: WorkoutRepository,
+    private val userRepository: UserRepository
+) : ViewModel() {
+
+    private val TAG = "WorkoutViewModel"
+
+    // Current user ID
+    private val _currentUserId = MutableStateFlow("")
+    val currentUserId: StateFlow<String> = _currentUserId
+
+    // Workout templates
+    private val _workoutTemplates = MutableStateFlow<List<WorkoutTemplate>>(emptyList())
+    val workoutTemplates = _workoutTemplates.asStateFlow()
+
+    // Active workout (if any)
+    private val _activeWorkout = MutableStateFlow<CompletedWorkout?>(null)
+    val activeWorkout = _activeWorkout.asStateFlow()
+
+    // Available exercises for selection
+    private val _exercisesList = MutableStateFlow<List<Exercise>>(emptyList())
+    val exercisesList = _exercisesList.asStateFlow()
+
+    // Exercise stats for the current user
+    private val _exerciseStats = MutableStateFlow<Map<String, ExerciseStat>>(emptyMap())
+    val exerciseStats = _exerciseStats.asStateFlow()
+
+    // Job for time tracking
+    private var timeTrackingJob: Job? = null
+
+    init {
+        // Get current user ID from Firebase Auth
+        auth.currentUser?.let { user ->
+            _currentUserId.value = user.uid
+            checkActiveWorkout(user.uid)
+        }
+    }
+
+    /**
+     * Loads user's workout templates from the repository
+     */
+    fun loadWorkoutTemplates(userId: String) {
+        viewModelScope.launch {
+            try {
+                workoutRepository.getUserWorkoutTemplates(userId).collect { templates ->
+                    _workoutTemplates.value = templates
+                    Log.d(TAG, "Loaded ${templates.size} workout templates")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading workout templates", e)
+            }
+        }
+    }
+
+    /**
+     * Loads all available exercises from the repository
+     */
+    fun loadAllExercises() {
+        viewModelScope.launch {
+            try {
+                // Initialize database if needed
+                exerciseRepository.initializeExerciseDatabase()
+
+                // Get all exercises
+                exerciseRepository.getAllExercises().collect { exercises ->
+                    _exercisesList.value = exercises
+                    Log.d(TAG, "Loaded ${exercises.size} exercises")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading exercises", e)
+            }
+        }
+    }
+
+    /**
+     * Starts a new workout for the user
+     */
+    fun startNewWorkout(userId: String) {
+        viewModelScope.launch {
+            try {
+                // Check if there's already an active workout
+                if (_activeWorkout.value != null) {
+                    // Don't create a new one, just return
+                    return@launch
+                }
+
+                // Generate workout name based on time of day
+                val workoutName = generateWorkoutNameBasedOnTimeOfDay()
+
+                // Create a new workout
+                val newWorkout = CompletedWorkout(
+                    id = UUID.randomUUID().toString(),
+                    userId = userId,
+                    name = workoutName,
+                    startTime = Timestamp.now(),
+                    exercises = emptyList()
+                )
+
+                // Save to repository
+                val result = workoutRepository.startWorkout(newWorkout)
+                if (result.isSuccess) {
+                    val savedWorkout = result.getOrNull()
+                    if (savedWorkout != null) {
+                        _activeWorkout.value = savedWorkout
+                        Log.d(TAG, "Started new workout: ${savedWorkout.id}")
+
+                        // Start time tracking for the new workout
+                        startWorkoutTimeTracking()
+                    }
+                } else {
+                    Log.e(TAG, "Failed to start workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting new workout", e)
+            }
+        }
+    }
+
+    /**
+     * Checks if the user has an active workout
+     */
+    fun checkActiveWorkout(userId: String) {
+        viewModelScope.launch {
+            try {
+                val result = workoutRepository.getActiveWorkout(userId)
+                if (result.isSuccess) {
+                    val activeWorkout = result.getOrNull()
+
+                    // Only set as active if it has no endTime (i.e., not finished or canceled)
+                    if (activeWorkout != null && activeWorkout.endTime == null) {
+                        _activeWorkout.value = activeWorkout
+                        Log.d(TAG, "Found active workout: ${activeWorkout.id}")
+                        // Start time tracking if there's an active workout
+                        startWorkoutTimeTracking()
+                    } else {
+                        // If workout is finished or canceled, make sure activeWorkout is null
+                        _activeWorkout.value = null
+                        Log.d(TAG, "No active workout found or workout was completed/canceled")
+                    }
+                } else {
+                    Log.e(TAG, "Error checking active workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception checking active workout", e)
+            }
+        }
+    }
+
+    /**
+     * Updates the current active workout
+     */
+    fun updateWorkout(workout: CompletedWorkout) {
+        viewModelScope.launch {
+            try {
+                val result = workoutRepository.updateWorkout(workout)
+                if (result.isSuccess) {
+                    // Update the activeWorkout state with the latest version
+                    _activeWorkout.value = workout
+                    Log.d(TAG, "Updated workout: ${workout.id}")
+                } else {
+                    Log.e(TAG, "Failed to update workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating workout", e)
+            }
+        }
+    }
+
+    /**
+     * Finishes the current workout and saves it to history
+     */
+    fun finishWorkout(workout: CompletedWorkout) {
+        viewModelScope.launch {
+            try {
+                // First update the workout with end time and duration if needed
+                val workoutToFinish = if (workout.endTime == null) {
+                    val endTime = Timestamp.now()
+                    val duration = ((endTime.seconds - workout.startTime.seconds) / 60) // Convert to minutes
+                    workout.copy(
+                        endTime = endTime,
+                        duration = duration
+                    )
+                } else {
+                    workout
+                }
+
+                // Save to repository
+                val result = workoutRepository.finishWorkout(workoutToFinish.id)
+                if (result.isSuccess) {
+                    // Update user stats with the completed workout
+                    val statsResult = userRepository.updateUserStatsAfterWorkout(
+                        userId = workout.userId,
+                        completedWorkout = workoutToFinish
+                    )
+
+                    if (statsResult.isSuccess) {
+                        Log.d(TAG, "Updated user stats after workout")
+                    } else {
+                        Log.e(TAG, "Failed to update user stats: ${statsResult.exceptionOrNull()?.message}")
+                    }
+
+                    // Clear the active workout
+                    _activeWorkout.value = null
+
+                    // Stop time tracking
+                    timeTrackingJob?.cancel()
+                    timeTrackingJob = null
+
+                    Log.d(TAG, "Finished workout: ${workoutToFinish.id}")
+                } else {
+                    Log.e(TAG, "Failed to finish workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error finishing workout", e)
+            }
+        }
+    }
+
+    /**
+     * Cancels the current workout
+     */
+    fun cancelWorkout(workoutId: String) {
+        viewModelScope.launch {
+            try {
+                // First update the workout with end time
+                val currentWorkout = _activeWorkout.value
+                if (currentWorkout != null && currentWorkout.id == workoutId) {
+                    // Update the workout with an end time to mark it as canceled
+                    val canceledWorkout = currentWorkout.copy(
+                        endTime = Timestamp.now()
+                    )
+                    // Update in repository before canceling
+                    workoutRepository.updateWorkout(canceledWorkout)
+                }
+
+                val result = workoutRepository.cancelWorkout(workoutId)
+                if (result.isSuccess) {
+                    // Clear the active workout immediately
+                    _activeWorkout.value = null
+
+                    // Stop time tracking
+                    timeTrackingJob?.cancel()
+                    timeTrackingJob = null
+
+                    Log.d(TAG, "Canceled workout: $workoutId")
+                } else {
+                    Log.e(TAG, "Failed to cancel workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error canceling workout", e)
+            }
+        }
+    }
+
+    /**
+     * Loads exercise stats for the current user
+     */
+    fun loadExerciseStats(userId: String) {
+        viewModelScope.launch {
+            try {
+                val result = userRepository.getUserStats(userId)
+                if (result.isSuccess) {
+                    val stats = result.getOrNull()
+                    if (stats != null) {
+                        _exerciseStats.value = stats.exerciseStats
+                        Log.d(TAG, "Loaded exercise stats for ${stats.exerciseStats.size} exercises")
+                    }
+                } else {
+                    Log.e(TAG, "Failed to load user stats: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading exercise stats", e)
+            }
+        }
+    }
+
+    /**
+     * Gets stats for a specific exercise
+     */
+    fun getExerciseStatsForId(exerciseId: String): StateFlow<Map<String, Any?>?> {
+        val statsFlow = MutableStateFlow<Map<String, Any?>?>(null)
+
+        viewModelScope.launch {
+            val stats = _exerciseStats.value[exerciseId]
+            if (stats != null) {
+                statsFlow.value = stats.toMap()
+            }
+        }
+
+        return statsFlow
+    }
+
+    /**
+     * Starts tracking workout time (updates every second)
+     */
+    fun startWorkoutTimeTracking() {
+        // Cancel any existing job
+        timeTrackingJob?.cancel()
+
+        // Start a new job
+        timeTrackingJob = viewModelScope.launch {
+            while (true) {
+                // Only update if there's an active workout with no end time
+                _activeWorkout.value?.let { workout ->
+                    if (workout.endTime == null) {
+                        // Trigger recomposition by updating the current workout
+                        _activeWorkout.update { it }
+                    } else {
+                        // If workout has ended, cancel the job
+                        timeTrackingJob?.cancel()
+                    }
+                } ?: run {
+                    // If activeWorkout is null, cancel the job
+                    timeTrackingJob?.cancel()
+                    return@launch
+                }
+
+                delay(1000) // Update every second
+            }
+        }
+    }
+
+    /**
+     * Generates a workout name based on the time of day
+     */
+    private fun generateWorkoutNameBasedOnTimeOfDay(): String {
+        val calendar = Calendar.getInstance()
+        val hourOfDay = calendar.get(Calendar.HOUR_OF_DAY)
+
+        return when {
+            hourOfDay < 12 -> "Poranny Trening"
+            hourOfDay < 17 -> "Popołudniowy Trening"
+            else -> "Wieczorny Trening"
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        timeTrackingJob?.cancel()
+    }
+}

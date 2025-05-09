@@ -28,6 +28,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.reset.PasswordRe
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeScreen
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.WorkoutScreen
 
 private const val TAG = "AppNavigation"
 
@@ -69,8 +70,8 @@ fun AppNavigation(navController: NavHostController) {
         }
     }
 
-    // Użyj zapamiętanego stanu uwierzytelnienia, aby natychmiast określić ekran startowy
-    // To zapewni natychmiastowe uruchomienie bez ekranu ładowania
+    // Use remembered auth state to immediately determine the start screen
+    // This ensures immediate startup without a loading screen
     val isUserLoggedIn = authViewModel.getRememberedAuthState()
     Log.d(TAG, "Initial remembered auth state: $isUserLoggedIn")
 
@@ -175,21 +176,6 @@ fun AppNavigation(navController: NavHostController) {
         }
 
         composable(
-            route = "main",
-            enterTransition = {
-                // When entering main screen
-                fadeIn(animationSpec = tween(300))
-            },
-            exitTransition = {
-                // When leaving main screen
-                fadeOut(animationSpec = tween(300))
-            }
-        ) {
-            Log.d(TAG, "Loading DashboardScreen")
-            DashboardScreen(navController, authViewModel)
-        }
-
-        composable(
             route = NavigationRoutes.EXERCISES,
             enterTransition = {
                 // When entering exercises screen
@@ -202,6 +188,21 @@ fun AppNavigation(navController: NavHostController) {
         ) {
             Log.d(TAG, "Loading ExerciseLibraryScreen")
             ExerciseLibraryScreen(navController)
+        }
+
+        composable(
+            route = NavigationRoutes.WORKOUT_SCREEN,
+            enterTransition = {
+                // When entering workout screen
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                // When leaving workout screen
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading WorkoutScreen")
+            WorkoutScreen(navController)
         }
     }
 }

@@ -95,25 +95,6 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideUserRepository(
-        auth: FirebaseAuth,
-        remoteDataSource: RemoteUserDataSource,
-        userDao: UserDao,
-        userAuthDao: UserAuthDao,
-        userProfileDao: UserProfileDao,
-        userStatsDao: UserStatsDao,
-        userAchievementDao: UserAchievementDao,
-        syncManager: SyncManager,
-        mappers: UserMappers
-    ): UserRepository {
-        return UserRepository(
-            auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
-            userStatsDao, userAchievementDao, syncManager, mappers
-        )
-    }
-
-    @Provides
-    @Singleton
     fun provideWorkoutRepository(
         exerciseRepository: ExerciseRepository,
         workoutDao: WorkoutDao,
@@ -128,4 +109,25 @@ object RepositoryModule {
             remoteDataSource, syncManager, networkManager, mappers
         )
     }
+
+    @Provides
+    @Singleton
+    fun provideUserRepository(
+        auth: FirebaseAuth,
+        remoteDataSource: RemoteUserDataSource,
+        userDao: UserDao,
+        userAuthDao: UserAuthDao,
+        userProfileDao: UserProfileDao,
+        userStatsDao: UserStatsDao,
+        userAchievementDao: UserAchievementDao,
+        syncManager: SyncManager,
+        mappers: UserMappers,
+        workoutRepository: WorkoutRepository  // Zależność
+    ): UserRepository {
+        return UserRepository(
+            auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
+            userStatsDao, userAchievementDao, syncManager, mappers, workoutRepository
+        )
+    }
 }
+
