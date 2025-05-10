@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kaczmarzykmarcin.GymBuddy.R
+import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
@@ -156,6 +157,12 @@ fun TrainingRecorderBottomSheet(
             timeState = System.currentTimeMillis() // This forces recomposition
         }
     }
+
+    // Załaduj dane o poprzednich seriach
+    LaunchedEffect(workout.userId) {
+        workoutViewModel.loadPreviousSetsData(workout.userId)
+    }
+
 
     if (showCancelConfirmation) {
         AlertDialog(
@@ -446,6 +453,7 @@ fun ExerciseItem(
 
     // Get previous exercise stats
     val exerciseStats by workoutViewModel.getExerciseStatsForId(exercise.exerciseId).collectAsState(null)
+    val previousSetsMap by workoutViewModel.previousSetsMap.collectAsState()
 
     Column(
         modifier = Modifier
@@ -463,10 +471,15 @@ fun ExerciseItem(
 
         // Exercise sets
         sets.forEachIndexed { index, set ->
+            // Oblicz numer serii normalnej, zliczając tylko serie typu "normal" do aktualnego indeksu
+            val normalSetNumber = sets.take(index + 1).count { it.setType == "normal" }
+
             SetItem(
                 set = set,
                 index = index,
+                normalSetNumber = if (set.setType == "normal") normalSetNumber else 0,
                 totalSets = sets.size,
+                previousSets = previousSetsMap[exercise.exerciseId],
                 previousStats = exerciseStats,
                 onSetUpdated = { updatedSet ->
                     sets[index] = updatedSet
@@ -490,7 +503,6 @@ fun ExerciseItem(
             onClick = {
                 // Add a new set with appropriate set number
                 val newSetType = "normal"
-                val normalSetCount = sets.count { it.setType == "normal" }
 
                 sets.add(
                     ExerciseSet(
@@ -532,7 +544,9 @@ fun ExerciseItem(
 fun SetItem(
     set: ExerciseSet,
     index: Int,
+    normalSetNumber: Int,
     totalSets: Int,
+    previousSets: List<PreviousSetInfo>?,
     previousStats: Map<String, Any?>?,
     onSetUpdated: (ExerciseSet) -> Unit,
     onSetDeleted: () -> Unit
@@ -542,16 +556,27 @@ fun SetItem(
     var reps by remember { mutableStateOf(set.reps.toString()) }
     var showSetTypeMenu by remember { mutableStateOf(false) }
 
+    // Znajdź poprzednią serię na podstawie typu i numeru serii
+    val previousSet = previousSets?.find { prevSet ->
+        if (setType == "normal") {
+            // Dla serii normalnych, znajdź po numerze serii
+            prevSet.setType == setType && prevSet.normalSetNumber == normalSetNumber
+        } else {
+            // Dla innych typów serii (warmup, dropset, failure), znajdź po typie
+            prevSet.setType == setType
+        }
+    }
+
     // Determine previous values to show as hints
-    val previousWeight = "0.0"
-    val previousReps = "0"
+    val previousWeight = previousSet?.weight?.toString() ?: "0.0"
+    val previousReps = previousSet?.reps?.toString() ?: "0"
 
     // Calculate set display label
     val setLabel = when (setType) {
         "warmup" -> "W"
         "dropset" -> "D"
         "failure" -> "F"
-        else -> (index + 1).toString() // Simple sequential numbering
+        else -> normalSetNumber.toString() // Używamy numeru serii normalnej zamiast indeksu
     }
 
     Card(
@@ -639,7 +664,11 @@ fun SetItem(
 
             // Previous set info (if available)
             Text(
-                text = "$previousWeight x $previousReps",
+                text = if (previousSet != null && (previousSet.weight > 0 || previousSet.reps > 0)) {
+                    "${previousSet.weight} x ${previousSet.reps}"
+                } else {
+                    "-"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray,
                 modifier = Modifier.weight(1f)

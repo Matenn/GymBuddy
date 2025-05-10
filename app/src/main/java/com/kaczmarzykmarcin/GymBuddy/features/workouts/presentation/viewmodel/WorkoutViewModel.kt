@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseStat
@@ -56,6 +57,12 @@ class WorkoutViewModel @Inject constructor(
 
     // Job for time tracking
     private var timeTrackingJob: Job? = null
+
+    /**
+     * Przechowuje poprzednie wartości serii dla danego ćwiczenia
+     */
+    private val _previousSetsMap = MutableStateFlow<Map<String, List<PreviousSetInfo>>>(emptyMap())
+    val previousSetsMap = _previousSetsMap.asStateFlow()
 
     init {
         // Get current user ID from Firebase Auth
@@ -347,6 +354,81 @@ class WorkoutViewModel @Inject constructor(
                 delay(1000) // Update every second
             }
         }
+    }
+
+    /**
+     * Pobiera historię treningów użytkownika i aktualizuje mapę poprzednich serii
+     */
+    fun loadPreviousSetsData(userId: String) {
+        viewModelScope.launch {
+            try {
+                // Pobierz ostatnio zakończone treningi użytkownika
+                workoutRepository.getUserWorkoutHistory(userId).collect { workouts ->
+                    // Filtrujemy tylko zakończone treningi, sortujemy według daty (od najnowszego)
+                    val completedWorkouts = workouts
+                        .filter { it.endTime != null }
+                        .sortedByDescending { it.endTime?.seconds }
+
+                    if (completedWorkouts.isNotEmpty()) {
+                        // Tworzymy mapę poprzednich serii dla każdego ćwiczenia
+                        val previousSetsMap = mutableMapOf<String, List<PreviousSetInfo>>()
+
+                        // Dla każdego ćwiczenia szukamy jego ostatniego wystąpienia
+                        completedWorkouts.forEach { workout ->
+                            workout.exercises.forEach { exercise ->
+                                // Jeśli to ćwiczenie nie jest jeszcze w mapie, dodajemy jego serie
+                                if (!previousSetsMap.containsKey(exercise.exerciseId)) {
+                                    // Konwertujemy serie na PreviousSetInfo
+                                    val normalSetCounter = exercise.sets
+                                        .filter { it.setType == "normal" }
+                                        .withIndex()
+                                        .associate { (index, _) -> index to index + 1 }
+
+                                    val previousSets = exercise.sets.mapIndexed { index, set ->
+                                        val normalSetNumber = if (set.setType == "normal") {
+                                            normalSetCounter[exercise.sets.take(index).count { it.setType == "normal" }] ?: 0
+                                        } else {
+                                            0
+                                        }
+
+                                        PreviousSetInfo(
+                                            setType = set.setType,
+                                            normalSetNumber = normalSetNumber,
+                                            weight = set.weight,
+                                            reps = set.reps
+                                        )
+                                    }
+
+                                    previousSetsMap[exercise.exerciseId] = previousSets
+                                }
+                            }
+                        }
+
+                        _previousSetsMap.value = previousSetsMap
+                        Log.d(TAG, "Loaded previous sets data for ${previousSetsMap.size} exercises")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading previous sets data", e)
+            }
+        }
+    }
+
+    /**
+     * Pobiera poprzednią serię dla danego ćwiczenia, typu serii i numeru
+     */
+    fun getPreviousSetInfo(exerciseId: String, setType: String, normalSetNumber: Int): PreviousSetInfo? {
+        val previousSets = _previousSetsMap.value[exerciseId] ?: return null
+
+        // Dla serii normalnych szukamy po typie i numerze
+        if (setType == "normal") {
+            return previousSets.find {
+                it.setType == setType && it.normalSetNumber == normalSetNumber
+            }
+        }
+
+        // Dla innych typów serii (warmup, dropset, failure) szukamy tylko po typie
+        return previousSets.find { it.setType == setType }
     }
 
     /**
