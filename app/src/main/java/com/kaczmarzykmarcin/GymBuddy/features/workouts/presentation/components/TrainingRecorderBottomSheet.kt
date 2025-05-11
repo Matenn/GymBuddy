@@ -71,6 +71,7 @@ import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseSet
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.ExerciseSelectionBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
 import kotlinx.coroutines.delay
@@ -376,18 +377,16 @@ fun TrainingRecorderBottomSheet(
 
     // Exercise selection sheet
     if (showExerciseSelection) {
-        ExerciseSelectionSheet(
-            userId = workout.userId,
+        ExerciseSelectionBottomSheet(
             onDismiss = { showExerciseSelection = false },
             onExercisesSelected = { selectedExercises ->
-                // Convert to CompletedExercise objects and add to the list
+                // Konwertuj do CompletedExercise i dodawaj do listy
                 val newExercises = selectedExercises.map { exercise ->
                     CompletedExercise(
                         exerciseId = exercise.id,
                         name = exercise.name,
                         category = exercise.category,
                         sets = listOf(
-                            // Add default warm-up set
                             ExerciseSet(
                                 setType = "warmup",
                                 weight = 0.0,
@@ -398,7 +397,6 @@ fun TrainingRecorderBottomSheet(
                 }
                 exercises.addAll(newExercises)
 
-                // Update workout in ViewModel with the new exercises to persist changes
                 val updatedWorkout = workout.copy(
                     exercises = exercises.toList()
                 )
@@ -409,6 +407,7 @@ fun TrainingRecorderBottomSheet(
         )
     }
 }
+
 
 @Composable
 fun EmptyWorkoutState() {
@@ -741,221 +740,7 @@ fun SetItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ExerciseSelectionSheet(
-    userId: String,
-    onDismiss: () -> Unit,
-    onExercisesSelected: (List<Exercise>) -> Unit,
-    workoutViewModel: WorkoutViewModel = hiltViewModel()
-) {
-    val sheetState = rememberModalBottomSheetState()
-    val scope = rememberCoroutineScope()
 
-    // Track selected exercises
-    val selectedExercises = remember { mutableStateListOf<Exercise>() }
-
-    // Get available exercises
-    val allExercises by workoutViewModel.exercisesList.collectAsState(emptyList())
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
-    var selectedMuscleGroup by remember { mutableStateOf<String?>(null) }
-
-    // Fetch exercises when the sheet is first displayed
-    LaunchedEffect(Unit) {
-        workoutViewModel.loadAllExercises()
-    }
-
-    // Filter exercises based on search query and filters
-    val filteredExercises = remember(allExercises, searchQuery, selectedCategory, selectedMuscleGroup) {
-        allExercises.filter { exercise ->
-            // Apply search filter
-            val matchesSearch = searchQuery.isEmpty() ||
-                    exercise.name.contains(searchQuery, ignoreCase = true)
-
-            // Apply category filter
-            val matchesCategory = selectedCategory == null ||
-                    exercise.category.equals(selectedCategory, ignoreCase = true)
-
-            // Apply muscle group filter
-            val matchesMuscleGroup = selectedMuscleGroup == null ||
-                    exercise.primaryMuscles.any { it.equals(selectedMuscleGroup, ignoreCase = true) } ||
-                    exercise.secondaryMuscles.any { it.equals(selectedMuscleGroup, ignoreCase = true) }
-
-            matchesSearch && matchesCategory && matchesMuscleGroup
-        }
-    }
-
-    // Group exercises by first letter for alphabetical display
-    val groupedExercises = remember(filteredExercises) {
-        filteredExercises.groupBy { exercise ->
-            val firstChar = exercise.name.firstOrNull()?.uppercaseChar() ?: '#'
-            if (firstChar.isLetter()) firstChar.toString() else "#"
-        }.toSortedMap()
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = { onDismiss() },
-        sheetState = sheetState,
-        containerColor = Color.White
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            // Header with title and action buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = { onDismiss() }
-                ) {
-                    Text(
-                        text = stringResource(R.string.cancel),
-                        color = Color.Red
-                    )
-                }
-
-                Text(
-                    text = stringResource(R.string.select_exercises),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-
-                TextButton(
-                    onClick = {
-                        onExercisesSelected(selectedExercises.toList())
-                    },
-                    enabled = selectedExercises.isNotEmpty()
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.add),
-                            color = if (selectedExercises.isEmpty()) Color.Gray else Color.Blue
-                        )
-                    }
-                }
-            }
-
-            Divider()
-
-            // Search box
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text(stringResource(R.string.search_exercise)) },
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color(0xFFF5F5F5),
-                    unfocusedContainerColor = Color(0xFFF5F5F5),
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            )
-
-            // Filter buttons (Category and Muscle Group)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterButton(
-                    text = selectedCategory ?: stringResource(R.string.select_category),
-                    isSelected = selectedCategory != null,
-                    onClick = {
-                        // Show category selection dialog
-                        // This would be implemented separately
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-
-                FilterButton(
-                    text = selectedMuscleGroup ?: stringResource(R.string.select_muscle_group),
-                    isSelected = selectedMuscleGroup != null,
-                    onClick = {
-                        // Show muscle group selection dialog
-                        // This would be implemented separately
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Exercise list
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 8.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                groupedExercises.forEach { (letter, exercises) ->
-                    // Section header (letter)
-                    Text(
-                        text = letter,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-
-                    // Exercise items for this letter
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        ),
-                        elevation = CardDefaults.cardElevation(
-                            defaultElevation = 2.dp
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            exercises.forEach { exercise ->
-                                SelectableExerciseItem(
-                                    exercise = exercise,
-                                    isSelected = selectedExercises.contains(exercise),
-                                    onToggle = {
-                                        if (selectedExercises.contains(exercise)) {
-                                            selectedExercises.remove(exercise)
-                                        } else {
-                                            selectedExercises.add(exercise)
-                                        }
-                                    }
-                                )
-
-                                if (exercise != exercises.last()) {
-                                    Divider(
-                                        modifier = Modifier.padding(horizontal = 16.dp),
-                                        color = Color.LightGray
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Add bottom space for better UX
-                Spacer(modifier = Modifier.height(100.dp))
-            }
-        }
-    }
-}
 
 @Composable
 fun SelectableExerciseItem(

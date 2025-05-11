@@ -50,6 +50,14 @@ class ExerciseLibraryViewModel @Inject constructor(
     // All exercises cached for filtering
     private val _allExercises = MutableStateFlow<List<Exercise>>(emptyList())
 
+    // Tryb wyboru (true) lub przeglądania (false)
+    private val _selectionMode = MutableStateFlow(false)
+    val selectionMode: StateFlow<Boolean> = _selectionMode
+
+    // Aktualnie wybrane ćwiczenia (używane tylko w trybie wyboru)
+    private val _selectedExercises = MutableStateFlow<Set<Exercise>>(emptySet())
+    val selectedExercises: StateFlow<Set<Exercise>> = _selectedExercises
+
     init {
         Log.d(TAG, "ViewModel initialized")
     }
@@ -226,6 +234,37 @@ class ExerciseLibraryViewModel @Inject constructor(
 
             Log.d(TAG, "Filtered exercises: ${filteredExercises.size} results")
         }
+    }
+
+    /**
+     * Przełącza tryb wyboru ćwiczeń
+     */
+    fun setSelectionMode(enabled: Boolean) {
+        _selectionMode.value = enabled
+        // Reset wybranych ćwiczeń przy przejściu do trybu wyboru
+        if (enabled) {
+            _selectedExercises.value = emptySet()
+        }
+    }
+
+    /**
+     * Funkcja do wybierania/odznaczania ćwiczeń w trybie wyboru
+     */
+    fun toggleExerciseSelection(exercise: Exercise) {
+        val currentSelection = _selectedExercises.value.toMutableSet()
+        if (currentSelection.contains(exercise)) {
+            currentSelection.remove(exercise)
+        } else {
+            currentSelection.add(exercise)
+        }
+        _selectedExercises.value = currentSelection
+    }
+
+    /**
+     * Funkcja do czyszczenia wyboru ćwiczeń
+     */
+    fun clearSelection() {
+        _selectedExercises.value = emptySet()
     }
 
     // Helper function to capitalize first letter

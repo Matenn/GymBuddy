@@ -113,5 +113,6 @@
     <string name="save">Zapisz</string>
     <string name="selected">Wybrane</string>
     <string name="resume_workout">Resume workout</string>
+    <string name="exercises_title">Exercises</string>
 
 </resources>
