@@ -31,11 +31,12 @@ fun ExerciseSelectionBottomSheet(
         onDismissRequest = { onDismiss() },
         sheetState = sheetState,
         containerColor = Color.White,
-        modifier = Modifier.padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
+        // Usuwamy padding na górze, który może powodować problemy z pozycjonowaniem
+        modifier = Modifier
     ) {
         ExerciseLibraryContent(
             viewModel = viewModel,
-            selectionMode = true,
+            selectionMode = true,  // To ustawienie spowoduje użycie kompaktowego scrollbara
             showHeader = true,
             onBackPressed = { onDismiss() },
             onExercisesSelected = { selectedExercises ->

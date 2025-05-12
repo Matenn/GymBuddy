@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.BottomNavigationBar
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.ActiveWorkoutMiniBar
@@ -60,8 +61,6 @@ fun WorkoutScreen(
     val activeWorkout by workoutViewModel.activeWorkout.collectAsState()
     val currentUserId by workoutViewModel.currentUserId.collectAsState()
 
-    var showWorkoutRecorder by remember { mutableStateOf(false) }
-
     // Fetch user's workout templates when screen is first displayed
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotEmpty()) {
@@ -74,25 +73,22 @@ fun WorkoutScreen(
     LaunchedEffect(activeWorkout) {
         // If active workout becomes null, ensure the bottom sheet is hidden
         if (activeWorkout == null) {
-            showWorkoutRecorder = false
+            workoutViewModel.showWorkoutRecorder(false)
         }
     }
 
-    // Calculate bottom nav height (constant value or using WindowInsets)
-    val bottomNavHeight = 86.dp
-
-    // Safe area at the bottom of the screen
-    val bottomInsets = WindowInsets.safeDrawing
-        .only(WindowInsetsSides.Bottom)
-        .asPaddingValues()
-        .calculateBottomPadding()
-
-    Box(modifier = Modifier.fillMaxSize()) {
+    AppScaffold(
+        navController = navController,
+        workoutViewModel = workoutViewModel,
+        contentPadding = PaddingValues(bottom = 80.dp) // Dodajemy padding na dole
+    ) { paddingValues ->
+        // Main content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
                 .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
+                .padding(paddingValues) // Używamy paddingValues przekazanego z AppScaffold
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
@@ -101,7 +97,7 @@ fun WorkoutScreen(
                 modifier = Modifier.padding(8.dp)
             )
 
-            // Search field (not functional in this implementation)
+            // Search field
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -139,7 +135,7 @@ fun WorkoutScreen(
                     if (activeWorkout == null) {
                         workoutViewModel.startNewWorkout(currentUserId)
                     }
-                    showWorkoutRecorder = true
+                    workoutViewModel.showWorkoutRecorder(true)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -192,47 +188,9 @@ fun WorkoutScreen(
                 )
             }
 
-            // Add space for the bottom navigation bar
+            // Add space for the bottom elements
             Spacer(modifier = Modifier.height(80.dp))
-
-            // Add extra space if there's an active workout (for minibar)
-            if (activeWorkout != null && !showWorkoutRecorder && activeWorkout?.endTime == null) {
-                Spacer(modifier = Modifier.height(56.dp)) // Height of minibar
-            }
         }
-
-        // If a workout is active and hasn't been canceled/finished, show the mini bar
-        if (activeWorkout != null && !showWorkoutRecorder && activeWorkout?.endTime == null) {
-            ActiveWorkoutMiniBar(
-                workout = activeWorkout!!,
-                onMiniBarClick = { showWorkoutRecorder = true },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = bottomNavHeight + bottomInsets) // Accounts for navigation height and safe area
-            )
-        }
-
-        // Bottom sheet for recording workout
-        if (showWorkoutRecorder && activeWorkout != null) {
-            TrainingRecorderBottomSheet(
-                workout = activeWorkout!!,
-                onDismiss = { showWorkoutRecorder = false },
-                onWorkoutFinish = {
-                    workoutViewModel.finishWorkout(it)
-                    showWorkoutRecorder = false // Ensure sheet is hidden after finishing
-                },
-                onWorkoutCancel = {
-                    workoutViewModel.cancelWorkout(it.id)
-                    showWorkoutRecorder = false // Ensure sheet is hidden after canceling
-                }
-            )
-        }
-
-        // Bottom Navigation Bar
-        BottomNavigationBar(
-            navController = navController,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
     }
 }
 

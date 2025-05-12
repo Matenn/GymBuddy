@@ -224,6 +224,7 @@ fun TrainingRecorderBottomSheet(
         )
     }
 
+
     ModalBottomSheet(
         onDismissRequest = {
             // Update workout in ViewModel before dismissing

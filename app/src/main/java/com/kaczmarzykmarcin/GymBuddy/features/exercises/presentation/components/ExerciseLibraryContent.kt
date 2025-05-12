@@ -11,11 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -108,229 +109,92 @@ fun ExerciseLibraryContent(
         exercisesGroupedByLetter
     }
 
-    val scrollState = rememberScrollState()
     val focusManager = LocalFocusManager.current
 
-    // Letter indices for alphabetical scrollbar
-    val letterHeaderIndices = remember(displayedExercisesGrouped) {
-        derivedStateOf {
-            val indices = mutableMapOf<String, Int>()
-            displayedExercisesGrouped.keys.sorted().forEachIndexed { index, letter ->
-                indices[letter] = index
-            }
-            indices
-        }
+    // Używamy LazyListState dla obsługi AlphabeticalScrollBar
+    val lazyListState = rememberLazyListState()
+
+    // Lista liter do paska przewijania
+    val lettersList = remember(displayedExercisesGrouped) {
+        displayedExercisesGrouped.keys.sorted()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+    // Mapowanie litery do pozycji w liście
+    val letterToPositionMap = remember(displayedExercisesGrouped) {
+        val sections = displayedExercisesGrouped.entries.sortedBy { it.key }
+        val map = mutableMapOf<String, Int>()
+
+        sections.forEachIndexed { index, (letter, _) ->
+            map[letter] = index
+        }
+
+        map
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Nagłówek jeśli wymagany
-        if (showHeader) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (!selectionMode) {
-                    // Standardowy nagłówek dla trybu przeglądania
-                    Text(
-                        text = stringResource(R.string.exercises_title),
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 32.sp,
-                        )
-                    )
-                } else {
-                    // Nagłówek dla trybu wyboru
-                    Text(
-                        text = stringResource(R.string.select_exercises),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    // Przyciski dla trybu wyboru
-                    if (onBackPressed != null) {
-                        TextButton(
-                            onClick = { onBackPressed() }
-                        ) {
-                            Text(
-                                text = stringResource(R.string.cancel),
-                                color = Color.Red
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Nagłówek jeśli wymagany
+            if (showHeader) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!selectionMode) {
+                        // Standardowy nagłówek dla trybu przeglądania
+                        Text(
+                            text = stringResource(R.string.exercises_title),
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 32.sp,
                             )
-                        }
-                    }
+                        )
+                    } else {
+                        // Nagłówek dla trybu wyboru
+                        Text(
+                            text = stringResource(R.string.select_exercises),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
 
-                    if (onExercisesSelected != null) {
-                        TextButton(
-                            onClick = {
-                                onExercisesSelected(selectedExercises.toList())
-                            },
-                            enabled = selectedExercises.isNotEmpty()
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Przyciski dla trybu wyboru
+                        if (onBackPressed != null) {
+                            TextButton(
+                                onClick = { onBackPressed() }
+                            ) {
                                 Text(
-                                    text = stringResource(R.string.add) + (if (selectedExercises.isNotEmpty()) " (${selectedExercises.size})" else ""),
-                                    color = if (selectedExercises.isEmpty()) Color.Gray else Color.Blue
+                                    text = stringResource(R.string.cancel),
+                                    color = Color.Red
                                 )
                             }
                         }
-                    }
-                }
-            }
 
-            Divider()
-        }
-
-        // Pole wyszukiwania
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.onSearchQueryChanged(it) },
-            placeholder = { Text(stringResource(R.string.search_exercise)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear search")
-                    }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(32.dp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = LightGrayBackground,
-                unfocusedContainerColor = LightGrayBackground,
-                cursorColor = Color.Black,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            ),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
-                .height(50.dp)
-        )
-
-        // Przyciski filtrów (kategorie i grupy mięśniowe)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Button(
-                onClick = { showCategoryFilter = true },
-                shape = RoundedCornerShape(32.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = LightGrayBackground,
-                    contentColor = if (selectedCategories.isEmpty()) Color.Black else Color.Black
-                ),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = if (selectedCategories.isEmpty()) stringResource(R.string.category_filter_title)
-                    else stringResource(R.string.category_filter_title) + " (${selectedCategories.size})",
-                    fontWeight = if (selectedCategories.isEmpty()) FontWeight.Normal
-                    else FontWeight.Bold
-                )
-            }
-
-            Button(
-                onClick = { showMuscleGroupFilter = true },
-                shape = RoundedCornerShape(32.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = LightGrayBackground,
-                    contentColor = if (selectedMuscleGroups.isEmpty()) Color.Black else Color.Black
-                ),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = if (selectedMuscleGroups.isEmpty()) stringResource(R.string.body_part_filter_title)
-                    else stringResource(R.string.body_part_filter_title) + " (${selectedMuscleGroups.size})",
-                    fontWeight = if (selectedMuscleGroups.isEmpty()) FontWeight.Normal
-                    else FontWeight.Bold
-                )
-            }
-        }
-
-        // Lista ćwiczeń
-        if ((isSearchActive || isFilteringActive) && searchResults.isEmpty()) {
-            // Pokazuj stan pusty gdy brak wyników
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.no_exercise_found),
-                    color = DarkGray
-                )
-            }
-        } else {
-            // Lista ćwiczeń z podziałem na sekcje alfabetyczne
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(scrollState)
-            ) {
-                displayedExercisesGrouped.entries.sortedBy { it.key }.forEach { (letter, exercises) ->
-                    Text(
-                        text = letter,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = Color.White
-                        ),
-                        elevation = CardDefaults.cardElevation(
-                            defaultElevation = 2.dp
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            exercises.forEachIndexed { index, exercise ->
-                                ExerciseItem(
-                                    exercise = exercise,
-                                    isSelected = selectedExercises.contains(exercise),
-                                    selectionMode = selectionMode,
-                                    onClick = {
-                                        if (selectionMode) {
-                                            viewModel.toggleExerciseSelection(exercise)
-                                        } else {
-                                            // Nawigacja do szczegółów ćwiczenia w trybie normalnym
-                                        }
-                                    }
-                                )
-
-                                if (index < exercises.size - 1) {
-                                    Divider(
-                                        color = Color.LightGray,
-                                        thickness = 0.5.dp,
-                                        modifier = Modifier.padding(vertical = 8.dp)
+                        if (onExercisesSelected != null) {
+                            TextButton(
+                                onClick = {
+                                    onExercisesSelected(selectedExercises.toList())
+                                },
+                                enabled = selectedExercises.isNotEmpty()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.add) + (if (selectedExercises.isNotEmpty()) " (${selectedExercises.size})" else ""),
+                                        color = if (selectedExercises.isEmpty()) Color.Gray else Color.Blue
                                     )
                                 }
                             }
@@ -338,42 +202,209 @@ fun ExerciseLibraryContent(
                     }
                 }
 
-                // Dodaj miejsce na dole dla bezpiecznego przewijania
-                Spacer(modifier = Modifier.height(80.dp))
+                Divider()
+            }
+
+            // Pole wyszukiwania
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.onSearchQueryChanged(it) },
+                placeholder = { Text(stringResource(R.string.search_exercise)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(32.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = LightGrayBackground,
+                    unfocusedContainerColor = LightGrayBackground,
+                    cursorColor = Color.Black,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp)
+                    .height(50.dp)
+            )
+
+            // Przyciski filtrów (kategorie i grupy mięśniowe)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Button(
+                    onClick = { showCategoryFilter = true },
+                    shape = RoundedCornerShape(32.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LightGrayBackground,
+                        contentColor = if (selectedCategories.isEmpty()) Color.Black else Color.Black
+                    ),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = if (selectedCategories.isEmpty()) stringResource(R.string.category_filter_title)
+                        else stringResource(R.string.category_filter_title) + " (${selectedCategories.size})",
+                        fontWeight = if (selectedCategories.isEmpty()) FontWeight.Normal
+                        else FontWeight.Bold
+                    )
+                }
+
+                Button(
+                    onClick = { showMuscleGroupFilter = true },
+                    shape = RoundedCornerShape(32.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = LightGrayBackground,
+                        contentColor = if (selectedMuscleGroups.isEmpty()) Color.Black else Color.Black
+                    ),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = if (selectedMuscleGroups.isEmpty()) stringResource(R.string.body_part_filter_title)
+                        else stringResource(R.string.body_part_filter_title) + " (${selectedMuscleGroups.size})",
+                        fontWeight = if (selectedMuscleGroups.isEmpty()) FontWeight.Normal
+                        else FontWeight.Bold
+                    )
+                }
+            }
+
+            // Lista ćwiczeń - umieszczamy w Box, aby móc dodać scrollbar obok listy
+            Box(
+                modifier = Modifier.weight(1f)
+            ) {
+                // Lista ćwiczeń
+                if ((isSearchActive || isFilteringActive) && searchResults.isEmpty()) {
+                    // Pokazuj stan pusty gdy brak wyników
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.no_exercise_found),
+                            color = DarkGray
+                        )
+                    }
+                } else {
+                    // Lista ćwiczeń z podziałem na sekcje alfabetyczne
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = lazyListState
+                    ) {
+                        items(displayedExercisesGrouped.entries.sortedBy { it.key }.toList()) { (letter, exercises) ->
+                            // Nagłówek sekcji
+                            Text(
+                                text = letter,
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color.White
+                                ),
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = 2.dp
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp)
+                                ) {
+                                    exercises.forEachIndexed { index, exercise ->
+                                        ExerciseItem(
+                                            exercise = exercise,
+                                            isSelected = selectedExercises.contains(exercise),
+                                            selectionMode = selectionMode,
+                                            onClick = {
+                                                if (selectionMode) {
+                                                    viewModel.toggleExerciseSelection(exercise)
+                                                } else {
+                                                    // Nawigacja do szczegółów ćwiczenia w trybie normalnym
+                                                }
+                                            }
+                                        )
+
+                                        if (index < exercises.size - 1) {
+                                            Divider(
+                                                color = Color.LightGray,
+                                                thickness = 0.5.dp,
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Dodaj miejsce na dole dla bezpiecznego przewijania
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
+                    }
+                }
+
+                // Dodaj AlphabeticalScrollBar tylko do obszaru listy
+                if (lettersList.isNotEmpty()) {
+                    AlphabeticalScrollBar(
+                        letters = lettersList,
+                        lazyListState = lazyListState,
+                        letterIndexMap = letterToPositionMap,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 4.dp)
+                    )
+                }
             }
         }
-    }
 
-    // Bottom Sheety do filtrowania
-    if (showCategoryFilter) {
-        CategoryFilterBottomSheet(
-            availableCategories = availableCategories,
-            selectedCategories = selectedCategories,
-            onCategorySelected = { category, isSelected ->
-                viewModel.onCategorySelected(category, isSelected)
-            },
-            onClearFilters = {
-                viewModel.clearCategoryFilters()
-            },
-            onDismiss = {
-                showCategoryFilter = false
-            }
-        )
-    }
+        // Bottom Sheety do filtrowania
+        if (showCategoryFilter) {
+            CategoryFilterBottomSheet(
+                availableCategories = availableCategories,
+                selectedCategories = selectedCategories,
+                onCategorySelected = { category, isSelected ->
+                    viewModel.onCategorySelected(category, isSelected)
+                },
+                onClearFilters = {
+                    viewModel.clearCategoryFilters()
+                },
+                onDismiss = {
+                    showCategoryFilter = false
+                }
+            )
+        }
 
-    if (showMuscleGroupFilter) {
-        MuscleGroupFilterBottomSheet(
-            availableMuscleGroups = availableMuscleGroups,
-            selectedMuscleGroups = selectedMuscleGroups,
-            onMuscleGroupSelected = { muscleGroup, isSelected ->
-                viewModel.onMuscleGroupSelected(muscleGroup, isSelected)
-            },
-            onClearFilters = {
-                viewModel.clearMuscleGroupFilters()
-            },
-            onDismiss = {
-                showMuscleGroupFilter = false
-            }
-        )
-    }
-}
+        if (showMuscleGroupFilter) {
+            MuscleGroupFilterBottomSheet(
+                availableMuscleGroups = availableMuscleGroups,
+                selectedMuscleGroups = selectedMuscleGroups,
+                onMuscleGroupSelected = { muscleGroup, isSelected ->
+                    viewModel.onMuscleGroupSelected(muscleGroup, isSelected)
+                },
+                onClearFilters = {
+                    viewModel.clearMuscleGroupFilters()
+                },
+                onDismiss = {
+                    showMuscleGroupFilter = false
+                }
+            )
+        }
+    }}

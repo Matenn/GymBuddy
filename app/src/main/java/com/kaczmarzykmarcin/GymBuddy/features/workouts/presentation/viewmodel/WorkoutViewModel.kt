@@ -171,6 +171,8 @@ class WorkoutViewModel @Inject constructor(
                     } else {
                         // If workout is finished or canceled, make sure activeWorkout is null
                         _activeWorkout.value = null
+                        // Also ensure workout recorder is hidden
+                        _showWorkoutRecorder.value = false
                         Log.d(TAG, "No active workout found or workout was completed/canceled")
                     }
                 } else {
@@ -238,6 +240,9 @@ class WorkoutViewModel @Inject constructor(
                     // Clear the active workout
                     _activeWorkout.value = null
 
+                    // Hide the workout recorder
+                    _showWorkoutRecorder.value = false
+
                     // Stop time tracking
                     timeTrackingJob?.cancel()
                     timeTrackingJob = null
@@ -273,6 +278,9 @@ class WorkoutViewModel @Inject constructor(
                 if (result.isSuccess) {
                     // Clear the active workout immediately
                     _activeWorkout.value = null
+
+                    // Hide the workout recorder
+                    _showWorkoutRecorder.value = false
 
                     // Stop time tracking
                     timeTrackingJob?.cancel()
@@ -354,6 +362,16 @@ class WorkoutViewModel @Inject constructor(
                 delay(1000) // Update every second
             }
         }
+    }
+
+
+    // Add this property to the WorkoutViewModel class
+    private val _showWorkoutRecorder = MutableStateFlow(false)
+    val showWorkoutRecorder = _showWorkoutRecorder.asStateFlow()
+
+    // Add this function
+    fun showWorkoutRecorder(show: Boolean) {
+        _showWorkoutRecorder.value = show
     }
 
     /**

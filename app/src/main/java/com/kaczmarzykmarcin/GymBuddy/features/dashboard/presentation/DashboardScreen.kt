@@ -74,11 +74,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kaczmarzykmarcin.GymBuddy.R
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.UserData
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthState
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.data.repository.DashboardViewModel
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -91,7 +93,8 @@ private const val TAG = "DashboardScreen"
 fun DashboardScreen(
     navController: NavController,
     authViewModel: AuthViewModel,
-    dashboardViewModel: DashboardViewModel = hiltViewModel()
+    dashboardViewModel: DashboardViewModel = hiltViewModel(),
+    workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
     val userData by dashboardViewModel.userData.collectAsState()
     val lastWorkout by dashboardViewModel.lastWorkout.collectAsState()
@@ -107,16 +110,23 @@ fun DashboardScreen(
             dashboardViewModel.loadUserData(user.uid)
             dashboardViewModel.loadLastWorkout(user.uid)
             dashboardViewModel.loadWeeklyActivity(user.uid)
+
+            // Also check for active workout
+            workoutViewModel.checkActiveWorkout(user.uid)
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    AppScaffold(
+        navController = navController,
+        workoutViewModel = workoutViewModel,
+        contentPadding = PaddingValues(bottom = 80.dp) // Dodaj odpowiedni padding na dole
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp,0.dp,16.dp,16.dp)
-
+                .padding(16.dp, 0.dp, 16.dp, 16.dp)
                 .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
+                .padding(paddingValues) // Dodaj padding przekazany z AppScaffold
                 .verticalScroll(rememberScrollState())
         ) {
             // Header with profile icon
@@ -240,11 +250,7 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(80.dp)) // Space for bottom navigation bar
         }
 
-        // Bottom Navigation Bar
-        BottomNavigationBar(
-            navController = navController,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+
     }
 }
 
