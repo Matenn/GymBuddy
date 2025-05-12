@@ -29,6 +29,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeS
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.WorkoutScreen
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.history.WorkoutHistoryScreen
 
 private const val TAG = "AppNavigation"
 
@@ -188,6 +189,21 @@ fun AppNavigation(navController: NavHostController) {
         ) {
             Log.d(TAG, "Loading ExerciseLibraryScreen")
             ExerciseLibraryScreen(navController)
+        }
+
+        composable(
+            route = NavigationRoutes.HISTORY,
+            enterTransition = {
+                // When entering history screen
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                // When leaving history screen
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading WorkoutHistoryScreen")
+            WorkoutHistoryScreen(navController, authViewModel)
         }
 
         composable(

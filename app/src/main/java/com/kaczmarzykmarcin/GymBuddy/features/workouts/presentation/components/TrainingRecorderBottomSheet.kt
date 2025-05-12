@@ -2,9 +2,11 @@ package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components
 
 import android.util.Log
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -59,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -117,7 +121,7 @@ fun TrainingRecorderBottomSheet(
         }
     }
 
-    // Local copy of the workout for editing - remeber both workout and exercises changes
+    // Local copy of the workout for editing - remember both workout and exercises changes
     val currentWorkout = remember(workout, exercises, workoutName) {
         workout.copy(
             name = workoutName,
@@ -326,6 +330,16 @@ fun TrainingRecorderBottomSheet(
                                     exercises = exercises.toList()
                                 )
                                 workoutViewModel.updateWorkout(updatedWorkout)
+                            },
+                            onExerciseDeleted = {
+                                // Remove the exercise from the list
+                                exercises.removeAt(index)
+
+                                // Update the workout in the ViewModel
+                                val updatedWorkout = workout.copy(
+                                    exercises = exercises.toList()
+                                )
+                                workoutViewModel.updateWorkout(updatedWorkout)
                             }
                         )
 
@@ -441,9 +455,11 @@ fun ExerciseItem(
     exercise: CompletedExercise,
     userId: String,
     onExerciseUpdated: (CompletedExercise) -> Unit,
+    onExerciseDeleted: () -> Unit,
     workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
     val sets = remember { mutableStateListOf<ExerciseSet>() }
+    var showDeleteConfirmation by remember { mutableStateOf(false) } // For delete confirmation dialog
 
     // Initialize sets from exercise
     LaunchedEffect(exercise) {
@@ -455,23 +471,116 @@ fun ExerciseItem(
     val exerciseStats by workoutViewModel.getExerciseStatsForId(exercise.exerciseId).collectAsState(null)
     val previousSetsMap by workoutViewModel.previousSetsMap.collectAsState()
 
+    // Delete confirmation dialog
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text(stringResource(R.string.delete_exercise)) },
+            text = { Text(stringResource(R.string.delete_exercise_confirmation)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        onExerciseDeleted()
+                    }
+                ) {
+                    Text(stringResource(R.string.confirm), color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
-        // Exercise name
-        Text(
-            text = exercise.name,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+        // Exercise name with delete option
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = exercise.name,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
 
-        Spacer(modifier = Modifier.height(8.dp))
+            // Delete exercise button
+            IconButton(
+                onClick = { showDeleteConfirmation = true },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_delete),
+                    contentDescription = stringResource(R.string.delete_exercise),
+                    tint = Color.Red
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Column headers - only shown if there are sets
+        if (sets.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Match the width of the set type button
+                Box(modifier = Modifier.width(60.dp)) {
+                    Text(
+                        text = stringResource(R.string.seria),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray
+                    )
+                }
+
+                // Previous values column
+                Text(
+                    text = stringResource(R.string.poprzednio),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Weight column
+                Text(
+                    text = stringResource(R.string.ciezar),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Reps column
+                Text(
+                    text = stringResource(R.string.powtorzenia),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Empty space for delete button
+                Spacer(modifier = Modifier.width(48.dp))
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         // Exercise sets
         sets.forEachIndexed { index, set ->
-            // Oblicz numer serii normalnej, zliczając tylko serie typu "normal" do aktualnego indeksu
+            // Calculate normal set number
             val normalSetNumber = sets.take(index + 1).count { it.setType == "normal" }
 
             SetItem(
@@ -498,15 +607,13 @@ fun ExerciseItem(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // Add set button
+        // Add set button - styled like in mockup
         Button(
             onClick = {
-                // Add a new set with appropriate set number
-                val newSetType = "normal"
-
+                // Add a new set with empty initial values
                 sets.add(
                     ExerciseSet(
-                        setType = newSetType,
+                        setType = "normal",
                         weight = 0.0,
                         reps = 0
                     )
@@ -518,24 +625,19 @@ fun ExerciseItem(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            shape = RoundedCornerShape(16.dp),
+                .padding(vertical = 8.dp)
+                .height(56.dp),
+            shape = RoundedCornerShape(28.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFEFF1F5),
+                containerColor = Color(0xFFF5F5F5),
                 contentColor = Color.Black
             )
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(text = stringResource(R.string.add_set))
-            }
+            Text(
+                text = stringResource(R.string.dodaj_serie),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -552,17 +654,20 @@ fun SetItem(
     onSetDeleted: () -> Unit
 ) {
     var setType by remember { mutableStateOf(set.setType) }
-    var weight by remember { mutableStateOf(set.weight.toString()) }
-    var reps by remember { mutableStateOf(set.reps.toString()) }
+    // Initialize with empty strings if values are 0
+    var weight by remember {
+        mutableStateOf(if (set.weight <= 0.0) "" else set.weight.toString())
+    }
+    var reps by remember {
+        mutableStateOf(if (set.reps <= 0) "" else set.reps.toString())
+    }
     var showSetTypeMenu by remember { mutableStateOf(false) }
 
-    // Znajdź poprzednią serię na podstawie typu i numeru serii
+    // Find previous set based on type and number
     val previousSet = previousSets?.find { prevSet ->
         if (setType == "normal") {
-            // Dla serii normalnych, znajdź po numerze serii
             prevSet.setType == setType && prevSet.normalSetNumber == normalSetNumber
         } else {
-            // Dla innych typów serii (warmup, dropset, failure), znajdź po typie
             prevSet.setType == setType
         }
     }
@@ -571,253 +676,203 @@ fun SetItem(
     val previousWeight = previousSet?.weight?.toString() ?: "0.0"
     val previousReps = previousSet?.reps?.toString() ?: "0"
 
+    // Format previous values for display
+    val previousDisplay = if (previousSet != null && (previousSet.weight > 0 || previousSet.reps > 0)) {
+        "${previousSet.weight}kg x ${previousSet.reps}"
+    } else {
+        "-"
+    }
+
     // Calculate set display label
     val setLabel = when (setType) {
         "warmup" -> "W"
         "dropset" -> "D"
         "failure" -> "F"
-        else -> normalSetNumber.toString() // Używamy numeru serii normalnej zamiast indeksu
+        else -> normalSetNumber.toString()
     }
 
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF8F8F8)
-        ),
-        shape = RoundedCornerShape(12.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Set type selector
-            Box {
-                Button(
-                    onClick = { showSetTypeMenu = true },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = when (setType) {
-                            "warmup" -> Color(0xFFE3F2FD)
-                            "dropset" -> Color(0xFFFBE9E7)
-                            "failure" -> Color(0xFFFFF3E0)
-                            else -> Color(0xFFEFEFEF)
-                        },
-                        contentColor = when (setType) {
-                            "warmup" -> Color.Blue
-                            "dropset" -> Color.Red
-                            "failure" -> Color(0xFFF57F17)
-                            else -> Color.Black
-                        }
-                    ),
-                    modifier = Modifier.size(width = 48.dp, height = 48.dp)
-                ) {
-                    Text(
-                        text = setLabel,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = showSetTypeMenu,
-                    onDismissRequest = { showSetTypeMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.normal_set)) },
-                        onClick = {
-                            setType = "normal"
-                            onSetUpdated(set.copy(setType = "normal"))
-                            showSetTypeMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.warmup_set)) },
-                        onClick = {
-                            setType = "warmup"
-                            onSetUpdated(set.copy(setType = "warmup"))
-                            showSetTypeMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.dropset)) },
-                        onClick = {
-                            setType = "dropset"
-                            onSetUpdated(set.copy(setType = "dropset"))
-                            showSetTypeMenu = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.failure_set)) },
-                        onClick = {
-                            setType = "failure"
-                            onSetUpdated(set.copy(setType = "failure"))
-                            showSetTypeMenu = false
-                        }
-                    )
-                }
+        // Set type selector
+        Box(modifier = Modifier.width(60.dp)) {
+            Button(
+                onClick = { showSetTypeMenu = true },
+                shape = RoundedCornerShape(50),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = when (setType) {
+                        "warmup" -> Color(0xFFE3F2FD)
+                        "dropset" -> Color(0xFFFBE9E7)
+                        "failure" -> Color(0xFFFFF3E0)
+                        else -> Color(0xFFEFEFEF)
+                    },
+                    contentColor = when (setType) {
+                        "warmup" -> Color.Blue
+                        "dropset" -> Color.Red
+                        "failure" -> Color(0xFFF57F17)
+                        else -> Color.Black
+                    }
+                ),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Text(
+                    text = setLabel,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            DropdownMenu(
+                expanded = showSetTypeMenu,
+                onDismissRequest = { showSetTypeMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.normal_set)) },
+                    onClick = {
+                        setType = "normal"
+                        onSetUpdated(set.copy(setType = "normal"))
+                        showSetTypeMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.warmup_set)) },
+                    onClick = {
+                        setType = "warmup"
+                        onSetUpdated(set.copy(setType = "warmup"))
+                        showSetTypeMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.dropset)) },
+                    onClick = {
+                        setType = "dropset"
+                        onSetUpdated(set.copy(setType = "dropset"))
+                        showSetTypeMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.failure_set)) },
+                    onClick = {
+                        setType = "failure"
+                        onSetUpdated(set.copy(setType = "failure"))
+                        showSetTypeMenu = false
+                    }
+                )
+            }
+        }
 
-            // Previous set info (if available)
-            Text(
-                text = if (previousSet != null && (previousSet.weight > 0 || previousSet.reps > 0)) {
-                    "${previousSet.weight} x ${previousSet.reps}"
-                } else {
-                    "-"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-                modifier = Modifier.weight(1f)
-            )
+        // Previous set info
+        Text(
+            text = previousDisplay,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray,
+            modifier = Modifier.weight(1f)
+        )
 
-            Spacer(modifier = Modifier.width(8.dp))
+        // Weight input - styled as plain text
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    // On click focus logic
+                }
+        ) {
+            if (weight.isEmpty()) {
+                Text(
+                    text = previousWeight,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.Gray.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-            // Weight input
-            OutlinedTextField(
+            BasicTextField(
                 value = weight,
                 onValueChange = {
                     weight = it
                     val weightValue = it.toDoubleOrNull() ?: 0.0
                     val repsValue = reps.toIntOrNull() ?: 0
-                    // Użyj aktualnych wartości ze stanu lokalnego
                     onSetUpdated(set.copy(
                         setType = setType,
                         weight = weightValue,
                         reps = repsValue
                     ))
                 },
-                placeholder = { Text(previousWeight) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
+                textStyle = TextStyle(
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    color = Color.Black
                 ),
-                modifier = Modifier.weight(1f)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
             )
+        }
 
-            Spacer(modifier = Modifier.width(8.dp))
+        // Reps input - styled as plain text
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    // On click focus logic
+                }
+        ) {
+            if (reps.isEmpty()) {
+                Text(
+                    text = previousReps,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.Gray.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
-            // Reps input
-            OutlinedTextField(
+            BasicTextField(
                 value = reps,
                 onValueChange = {
                     reps = it
                     val repsValue = it.toIntOrNull() ?: 0
                     val weightValue = weight.toDoubleOrNull() ?: 0.0
-
-                    Log.d("SetEditor", "Input reps: '$it', Converted to int: $repsValue")
-
-                    // Użyj aktualnych wartości ze stanu lokalnego
                     onSetUpdated(set.copy(
                         setType = setType,
                         weight = weightValue,
                         reps = repsValue
                     ))
                 },
-                placeholder = { Text(previousReps) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
+                textStyle = TextStyle(
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    color = Color.Black
                 ),
-                modifier = Modifier.weight(1f)
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            // Delete button
-            if (totalSets > 1) {
-                IconButton(onClick = onSetDeleted) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_delete),
-                        contentDescription = stringResource(R.string.delete_set),
-                        tint = Color.Gray
-                    )
-                }
-            }
         }
-    }
-}
 
-
-
-@Composable
-fun SelectableExerciseItem(
-    exercise: Exercise,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .clickable { onToggle() },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Exercise info
-        Column(
-            modifier = Modifier.weight(1f)
+        // Delete button - Now always shown regardless of totalSets
+        IconButton(
+            onClick = onSetDeleted,
+            modifier = Modifier.size(48.dp)
         ) {
-            Text(
-                text = exercise.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Text(
-                text = exercise.primaryMuscles.firstOrNull()?.capitalizeFirstLetter() ?: exercise.category,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray
-            )
-        }
-
-        // Selection indicator
-        if (isSelected) {
             Icon(
-                painter = painterResource(id = R.drawable.ic_check),
-                contentDescription = stringResource(R.string.selected),
-                tint = Color.Green
+                painter = painterResource(id = R.drawable.ic_delete),
+                contentDescription = stringResource(R.string.delete_set),
+                tint = Color.Gray
             )
         }
     }
 }
-
-@Composable
-fun FilterButton(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isSelected) Color(0xFFE3F2FD) else Color(0xFFF5F5F5),
-            contentColor = if (isSelected) Color.Blue else Color.Black
-        ),
-        modifier = modifier.height(42.dp)
-    ) {
-        Text(
-            text = text,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-        )
-        Icon(
-            imageVector = Icons.Default.ArrowDropDown,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
-
-// ActiveWorkoutMiniBar has been moved to a separate file
-
-// Extension function to capitalize first letter of a string
-private fun String.capitalizeFirstLetter(): String {
-    return if (this.isEmpty()) this else this.substring(0, 1).uppercase() + this.substring(1)
-}
-
-// Helper functions for time formatting have been moved to a separate file

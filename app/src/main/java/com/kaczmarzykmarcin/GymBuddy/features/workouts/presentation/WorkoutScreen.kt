@@ -40,13 +40,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
-import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.BottomNavigationBar
+
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.ActiveWorkoutMiniBar
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.TrainingRecorderBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
@@ -86,14 +87,14 @@ fun WorkoutScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(16.dp,0.dp,16.dp,16.dp)
                 .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
                 .padding(paddingValues) // Używamy paddingValues przekazanego z AppScaffold
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
                 text = stringResource(R.string.training),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.padding(8.dp)
             )
 

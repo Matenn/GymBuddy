@@ -115,4 +115,27 @@
     <string name="resume_workout">Resume workout</string>
     <string name="exercises_title">Exercises</string>
 
+
+    <string name="seria">Seria</string>
+    <string name="poprzednio">Poprzednio</string>
+    <string name="ciezar">Ciężar</string>
+    <string name="powtorzenia">Powtórzenia</string>
+    <string name="dodaj_serie">Dodaj serie</string>
+    <string name="delete_exercise">Delete exercise</string>
+    <string name="delete_exercise_confirmation">Are you sure to delete exercise?</string>
+
+
+    <!-- Workout History Screen -->
+    <string name="workout_history">Historia treningów</string>
+    <string name="search_workouts">Wyszukaj treningi</string>
+    <string name="select_date">Wybierz datę</string>
+
+    <string name="no_workouts_found">Nie znaleziono treningów</string>
+    <string name="try_different_search">Spróbuj zmienić kryteria wyszukiwania</string>
+    <string name="unnamed_workout">Nienazwany trening</string>
+    <string name="completed_on">Wykonano: %1$s</string>
+    <string name="clear_all_filters">Clear filters</string>
+    <string name="clear_filter">Clear filter</string>
+
+
 </resources>

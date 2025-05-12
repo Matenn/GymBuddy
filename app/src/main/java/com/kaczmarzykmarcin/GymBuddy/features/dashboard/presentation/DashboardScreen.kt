@@ -569,7 +569,7 @@ fun LevelProgressBar(currentXp: Int, maxXp: Int, level: Int) {
         }
     }
 }
-
+/*
 @Composable
 fun BottomNavigationBar(
     navController: NavController,
@@ -678,6 +678,8 @@ fun BottomNavigationBar(
     }
 }
 
+
+ */
 // Helper functions
 private fun formatDuration(minutes: Long): String {
     val hours = minutes / 60

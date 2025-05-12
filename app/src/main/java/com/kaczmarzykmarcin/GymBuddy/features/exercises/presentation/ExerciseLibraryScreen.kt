@@ -13,7 +13,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.BottomNavigationBar
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.BottomNavigationBar
+
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.ExerciseLibraryContent
 
 @Composable
