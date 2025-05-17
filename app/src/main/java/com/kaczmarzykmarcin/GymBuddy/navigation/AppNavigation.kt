@@ -220,5 +220,7 @@ fun AppNavigation(navController: NavHostController) {
             Log.d(TAG, "Loading WorkoutScreen")
             WorkoutScreen(navController)
         }
+
+
     }
 }

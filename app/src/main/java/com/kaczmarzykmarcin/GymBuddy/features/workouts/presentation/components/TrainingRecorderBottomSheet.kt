@@ -1,6 +1,5 @@
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components
 
-import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -26,14 +25,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -45,7 +40,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,16 +67,11 @@ import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseSet
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.ExerciseSelectionBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -320,7 +309,7 @@ fun TrainingRecorderBottomSheet(
                 } else {
                     // List of exercises
                     exercises.forEachIndexed { index, exercise ->
-                        ExerciseItem(
+                        ExerciseItemWorkout(
                             exercise = exercise,
                             userId = workout.userId,
                             onExerciseUpdated = { updatedExercise ->
@@ -451,7 +440,7 @@ fun EmptyWorkoutState() {
 }
 
 @Composable
-fun ExerciseItem(
+fun ExerciseItemWorkout(
     exercise: CompletedExercise,
     userId: String,
     onExerciseUpdated: (CompletedExercise) -> Unit,

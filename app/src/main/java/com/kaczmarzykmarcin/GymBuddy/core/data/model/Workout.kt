@@ -44,11 +44,11 @@ data class WorkoutTemplate(
 data class CompletedWorkout(
     @DocumentId val id: String = "",
     val userId: String = "",
-    val name: String = "",  // np. "Poranny Trening"
-    val templateId: String? = null, // ID szablonu (jeśli był użyty)
+    val name: String = "",
+    val templateId: String? = null,
     val startTime: Timestamp = Timestamp.now(),
     val endTime: Timestamp? = null,
-    val duration: Long = 0, // w minutach
+    val duration: Long = 0, // teraz w sekundach zamiast w minutach
     val exercises: List<CompletedExercise> = emptyList()
 ) {
     // Przydatne metody konwersji do/z Map dla Firestore
@@ -58,7 +58,7 @@ data class CompletedWorkout(
         "templateId" to templateId,
         "startTime" to startTime,
         "endTime" to endTime,
-        "duration" to duration,
+        "duration" to duration, // przechowuje sekundy
         "exercises" to exercises.map { it.toMap() }
     )
 
@@ -70,7 +70,7 @@ data class CompletedWorkout(
             templateId = map["templateId"] as? String,
             startTime = map["startTime"] as? Timestamp ?: Timestamp.now(),
             endTime = map["endTime"] as? Timestamp,
-            duration = (map["duration"] as? Long) ?: 0L,
+            duration = (map["duration"] as? Long) ?: 0L, // teraz w sekundach
             exercises = (map["exercises"] as? List<*>)?.mapNotNull {
                 (it as? Map<*, *>)?.let { CompletedExercise.fromMap(it) }
             } ?: emptyList()
@@ -78,14 +78,14 @@ data class CompletedWorkout(
     }
 
     /**
-     * Oblicza czas trwania treningu w minutach.
+     * Oblicza czas trwania treningu w sekundach.
      */
     fun calculateDuration(): Long {
         if (endTime == null) return 0
-        val diffSeconds = endTime.seconds - startTime.seconds
-        return diffSeconds / 60
+        return endTime.seconds - startTime.seconds // bezpośrednio zwraca sekundy
     }
 }
+
 
 /**
  * Klasa reprezentująca wykonane ćwiczenie w ramach treningu.

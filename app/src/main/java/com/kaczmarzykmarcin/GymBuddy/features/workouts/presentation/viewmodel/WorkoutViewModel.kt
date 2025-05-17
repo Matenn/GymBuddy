@@ -213,7 +213,7 @@ class WorkoutViewModel @Inject constructor(
                 // First update the workout with end time and duration if needed
                 val workoutToFinish = if (workout.endTime == null) {
                     val endTime = Timestamp.now()
-                    val duration = ((endTime.seconds - workout.startTime.seconds) / 60) // Convert to minutes
+                    val duration = endTime.seconds - workout.startTime.seconds // Teraz w sekundach zamiast minut
                     workout.copy(
                         endTime = endTime,
                         duration = duration

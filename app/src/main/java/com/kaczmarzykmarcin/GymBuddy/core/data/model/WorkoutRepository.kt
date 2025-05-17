@@ -182,14 +182,14 @@ class WorkoutRepository @Inject constructor(
             // Konwertuj na model
             val workout = mappers.toModel(workoutEntity)
 
-            // Ustaw czas zakończenia i oblicz czas trwania
+            // Ustaw czas zakończenia i oblicz czas trwania w sekundach
             val endTime = Timestamp.now()
-            val duration = (endTime.seconds - workout.startTime.seconds) / 60
+            val duration = endTime.seconds - workout.startTime.seconds
 
             // Zaktualizuj model
             val updatedWorkout = workout.copy(
                 endTime = endTime,
-                duration = duration
+                duration = duration  // Teraz przechowuje sekundy
             )
 
             // Zapisz lokalnie

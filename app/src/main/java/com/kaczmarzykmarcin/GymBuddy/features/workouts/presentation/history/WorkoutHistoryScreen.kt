@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Divider
@@ -61,11 +62,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -80,16 +83,29 @@ import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.rememberConten
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthState
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutDetailsBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.history.viewmodel.WorkoutHistoryViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
 import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import javax.inject.Inject
 
 private const val TAG = "WorkoutHistoryScreen"
+
+/**
+ * Punkt wejścia do wstrzykiwania repozytorium
+ */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface WorkoutRepositoryEntryPoint {
+    val workoutRepository: com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +115,14 @@ fun WorkoutHistoryScreen(
     workoutViewModel: WorkoutViewModel = hiltViewModel(),
     workoutHistoryViewModel: WorkoutHistoryViewModel = hiltViewModel()
 ) {
+    // Pobierz repozytorium przez EntryPoint zamiast przez hiltViewModel
+    val context = LocalContext.current
+    val entryPoint = EntryPointAccessors.fromApplication(
+        context,
+        WorkoutRepositoryEntryPoint::class.java
+    )
+    val workoutRepository = entryPoint.workoutRepository
+
     val workoutHistory by workoutHistoryViewModel.workoutHistory.collectAsState()
     val filteredWorkouts by workoutHistoryViewModel.filteredWorkouts.collectAsState()
 
@@ -107,6 +131,12 @@ fun WorkoutHistoryScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val contentPadding = rememberContentPadding(workoutViewModel = workoutViewModel)
+    val coroutineScope = rememberCoroutineScope()
+
+    // Zmienne stanu dla szczegółów treningu
+    var selectedWorkoutId by remember { mutableStateOf<String?>(null) }
+    var selectedWorkout by remember { mutableStateOf<CompletedWorkout?>(null) }
+    var isLoadingWorkout by remember { mutableStateOf(false) }
 
     val currentUser = when (val authState = authViewModel.authState.collectAsState().value) {
         is AuthState.Authenticated -> authState.user
@@ -120,10 +150,29 @@ fun WorkoutHistoryScreen(
         }
     }
 
+    // Ładuj szczegóły treningu gdy zostanie wybrany
+    LaunchedEffect(selectedWorkoutId) {
+        selectedWorkoutId?.let { workoutId ->
+            isLoadingWorkout = true
+            try {
+                val result = workoutRepository.getCompletedWorkout(workoutId)
+                if (result.isSuccess) {
+                    selectedWorkout = result.getOrNull()
+                } else {
+                    Log.e(TAG, "Error loading workout details: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception loading workout details", e)
+            } finally {
+                isLoadingWorkout = false
+            }
+        }
+    }
+
     AppScaffold(
         navController = navController,
         workoutViewModel = workoutViewModel,
-        contentPadding = PaddingValues(bottom = 80.dp) // Dodaj odpowiedni padding na dole
+        contentPadding = PaddingValues(bottom = 80.dp)
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -309,14 +358,57 @@ fun WorkoutHistoryScreen(
                         WorkoutHistoryCard(
                             workout = workout,
                             onDetailsClick = {
-                                // Navigate to workout details (will be implemented later)
-                                // navController.navigate("${NavigationRoutes.WORKOUT_DETAILS}/${workout.id}")
+                                // Pokaż szczegóły treningu w bottom sheet
+                                selectedWorkoutId = workout.id
                             }
                         )
                     }
                 }
             }
+
+            // Wskaźnik ładowania przy pobieraniu szczegółów treningu
+            if (isLoadingWorkout) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color.Black)
+                }
+            }
         }
+    }
+
+    // Wyświetl bottom sheet jeśli jest wybrany trening
+    selectedWorkout?.let { workout ->
+        WorkoutDetailsBottomSheet(
+            workout = workout,
+            onDismiss = {
+                selectedWorkout = null
+                selectedWorkoutId = null
+            },
+            onWorkoutUpdate = { updatedWorkout ->
+                // Użyj coroutineScope do wywołania funkcji suspend
+                coroutineScope.launch {
+                    try {
+                        val result = workoutRepository.updateWorkout(updatedWorkout)
+                        if (result.isSuccess) {
+                            Log.d(TAG, "Workout updated successfully")
+                            // Odświeżenie historii treningów po aktualizacji
+                            currentUser?.let { user ->
+                                workoutHistoryViewModel.loadWorkoutHistory(user.uid)
+                            }
+                        } else {
+                            Log.e(TAG, "Failed to update workout: ${result.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Exception updating workout", e)
+                    } finally {
+                        selectedWorkout = null
+                        selectedWorkoutId = null
+                    }
+                }
+            }
+        )
     }
 }
 
@@ -474,12 +566,6 @@ fun NoWorkoutsFound() {
 }
 
 // Helper function to format duration
-private fun formatDuration(minutes: Long): String {
-    val hours = minutes / 60
-    val mins = minutes % 60
-    return if (hours > 0) {
-        "${hours}h ${mins}min"
-    } else {
-        "${mins}min"
-    }
+private fun formatDuration(seconds: Long): String {
+    return TimeUtils.formatDurationSeconds(seconds)
 }

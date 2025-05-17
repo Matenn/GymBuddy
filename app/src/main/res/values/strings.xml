@@ -136,6 +136,10 @@
     <string name="completed_on">Wykonano: %1$s</string>
     <string name="clear_all_filters">Clear filters</string>
     <string name="clear_filter">Clear filter</string>
+    <string name="edit">Edit</string>
+    <string name="discard_changes">Discard changes</string>
+    <string name="discard_changes_confirmation">Are you sure to discard changes?</string>
+    <string name="close">Close</string>
 
 
 </resources>

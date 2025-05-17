@@ -82,6 +82,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.data.repository.DashboardViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -681,16 +682,9 @@ fun BottomNavigationBar(
 
  */
 // Helper functions
-private fun formatDuration(minutes: Long): String {
-    val hours = minutes / 60
-    val mins = minutes % 60
-    return if (hours > 0) {
-        "${hours}h ${mins}min"
-    } else {
-        "${mins}min"
-    }
+private fun formatDuration(seconds: Long): String {
+    return TimeUtils.formatDurationSeconds(seconds)
 }
-
 private fun calculateMaxXp(level: Int): Int {
     return 100 + (level - 1) * 50
 }
