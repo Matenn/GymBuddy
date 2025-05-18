@@ -29,6 +29,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeS
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.WorkoutScreen
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.categories.CategoryManagementScreen
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.history.WorkoutHistoryScreen
 
 private const val TAG = "AppNavigation"
@@ -221,6 +222,18 @@ fun AppNavigation(navController: NavHostController) {
             WorkoutScreen(navController)
         }
 
+        composable(
+            route = NavigationRoutes.CATEGORY_MANAGEMENT,
+            enterTransition = {
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading CategoryManagementScreen")
+            CategoryManagementScreen(navController)
+        }
 
     }
 }

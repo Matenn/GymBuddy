@@ -1,3 +1,5 @@
+
+
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel
 
 import android.util.Log
@@ -9,16 +11,21 @@ import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseStat
+import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
 import com.kaczmarzykmarcin.GymBuddy.data.repository.ExerciseRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
+import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutCategoryRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -30,7 +37,8 @@ class WorkoutViewModel @Inject constructor(
     private val auth: FirebaseAuth,
     private val exerciseRepository: ExerciseRepository,
     private val workoutRepository: WorkoutRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val workoutCategoryRepository: WorkoutCategoryRepository
 ) : ViewModel() {
 
     private val TAG = "WorkoutViewModel"
@@ -55,6 +63,35 @@ class WorkoutViewModel @Inject constructor(
     private val _exerciseStats = MutableStateFlow<Map<String, ExerciseStat>>(emptyMap())
     val exerciseStats = _exerciseStats.asStateFlow()
 
+    // Selected category ID for filtering
+    private val _selectedCategoryId = MutableStateFlow<String?>(null)
+    val selectedCategoryId: StateFlow<String?> = _selectedCategoryId
+
+    // Lista wszystkich kategorii
+    val categories = workoutCategoryRepository
+        .getUserWorkoutCategories(_currentUserId.value)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = emptyList()
+        )
+
+    // Treningi filtrowane po kategorii
+    val filteredWorkouts = combine(
+        workoutRepository.getUserWorkoutHistory(_currentUserId.value),
+        selectedCategoryId
+    ) { workoutsList, categoryId ->
+        if (categoryId == null) {
+            workoutsList
+        } else {
+            workoutsList.filter { it.categoryId == categoryId }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Lazily,
+        initialValue = emptyList()
+    )
+
     // Job for time tracking
     private var timeTrackingJob: Job? = null
 
@@ -64,13 +101,114 @@ class WorkoutViewModel @Inject constructor(
     private val _previousSetsMap = MutableStateFlow<Map<String, List<PreviousSetInfo>>>(emptyMap())
     val previousSetsMap = _previousSetsMap.asStateFlow()
 
+    // Flag showing workout recorder
+    private val _showWorkoutRecorder = MutableStateFlow(false)
+    val showWorkoutRecorder = _showWorkoutRecorder.asStateFlow()
+
     init {
         // Get current user ID from Firebase Auth
         auth.currentUser?.let { user ->
             _currentUserId.value = user.uid
             checkActiveWorkout(user.uid)
+            // Initialize default categories
+            initializeCategories(user.uid)
         }
     }
+
+    /**
+     * Inicjalizuje kategorie treningowe dla użytkownika
+     */
+    private fun initializeCategories(userId: String) {
+        viewModelScope.launch {
+            workoutCategoryRepository.initializeDefaultCategories(userId)
+        }
+    }
+
+    /**
+     * Dodaje nową kategorię
+     */
+    fun addCategory(name: String, color: String) {
+        if (name.isBlank()) return
+
+        viewModelScope.launch {
+            val newCategory = WorkoutCategory(
+                id = UUID.randomUUID().toString(),
+                userId = _currentUserId.value,
+                name = name,
+                color = color
+            )
+            workoutCategoryRepository.createWorkoutCategory(newCategory)
+        }
+    }
+
+    /**
+     * Aktualizuje kategorię
+     */
+    fun updateCategory(category: WorkoutCategory) {
+        if (category.name.isBlank()) return
+
+        viewModelScope.launch {
+            workoutCategoryRepository.updateWorkoutCategory(category)
+        }
+    }
+
+    /**
+     * Usuwa kategorię
+     */
+    fun deleteCategory(categoryId: String) {
+        viewModelScope.launch {
+            // Sprawdź czy istnieją treningi z tą kategorią
+            val workouts = workoutRepository.getUserWorkoutHistory(_currentUserId.value)
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.Lazily,
+                    initialValue = emptyList()
+                ).value
+
+            val templates = workoutRepository.getUserWorkoutTemplates(_currentUserId.value)
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.Lazily,
+                    initialValue = emptyList()
+                ).value
+
+            // Jeśli istnieją treningi z tą kategorią, zmień ich kategorię na null
+            workouts.filter { it.categoryId == categoryId }.forEach { workout ->
+                workoutRepository.updateWorkout(workout.copy(categoryId = null))
+            }
+
+            // Zmień kategorię szablonów treningów na null
+            templates.filter { it.categoryId == categoryId }.forEach { template ->
+                workoutRepository.updateWorkoutTemplate(template.copy(categoryId = null))
+            }
+
+            // Usuń kategorię
+            workoutCategoryRepository.deleteWorkoutCategory(categoryId)
+
+            // Jeśli usunięta kategoria była wybrana, zresetuj filtr
+            if (_selectedCategoryId.value == categoryId) {
+                _selectedCategoryId.value = null
+            }
+        }
+    }
+
+    /**
+     * Metoda do zmiany wybranej kategorii dla filtrowania
+     */
+    fun selectCategory(categoryId: String?) {
+        _selectedCategoryId.value = categoryId
+    }
+
+    /**
+     * Pobiera kategorię po ID
+     */
+    suspend fun getCategory(categoryId: String?): WorkoutCategory? {
+        if (categoryId == null) return null
+
+        return workoutCategoryRepository.getWorkoutCategory(categoryId).getOrNull()
+    }
+
+    // Pozostałe istniejące metody...
 
     /**
      * Loads user's workout templates from the repository
@@ -111,7 +249,7 @@ class WorkoutViewModel @Inject constructor(
     /**
      * Starts a new workout for the user
      */
-    fun startNewWorkout(userId: String) {
+    fun startNewWorkout(userId: String, categoryId: String? = null) {
         viewModelScope.launch {
             try {
                 // Check if there's already an active workout
@@ -128,6 +266,7 @@ class WorkoutViewModel @Inject constructor(
                     id = UUID.randomUUID().toString(),
                     userId = userId,
                     name = workoutName,
+                    categoryId = categoryId,
                     startTime = Timestamp.now(),
                     exercises = emptyList()
                 )
@@ -142,6 +281,9 @@ class WorkoutViewModel @Inject constructor(
 
                         // Start time tracking for the new workout
                         startWorkoutTimeTracking()
+
+                        // Show workout recorder
+                        showWorkoutRecorder(true)
                     }
                 } else {
                     Log.e(TAG, "Failed to start workout: ${result.exceptionOrNull()?.message}")
@@ -183,6 +325,8 @@ class WorkoutViewModel @Inject constructor(
             }
         }
     }
+
+    // Pozostałe metody bez zmian...
 
     /**
      * Updates the current active workout
@@ -364,12 +508,9 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
-
-    // Add this property to the WorkoutViewModel class
-    private val _showWorkoutRecorder = MutableStateFlow(false)
-    val showWorkoutRecorder = _showWorkoutRecorder.asStateFlow()
-
-    // Add this function
+    /**
+     * Zmienia widoczność rejestratora treningów
+     */
     fun showWorkoutRecorder(show: Boolean) {
         _showWorkoutRecorder.value = show
     }

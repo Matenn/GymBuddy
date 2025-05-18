@@ -23,6 +23,7 @@ class RemoteUserDataSource @Inject constructor(
     private val userAchievementsCollection = firestore.collection("userAchievements")
     private val workoutTemplatesCollection = firestore.collection("workoutTemplates")
     private val completedWorkoutsCollection = firestore.collection("completedWorkouts")
+    private val workoutCategoriesCollection = firestore.collection("workoutCategories")
 
     /**
      * Tworzy nowego użytkownika w Firebase
@@ -480,7 +481,108 @@ class RemoteUserDataSource @Inject constructor(
             Result.failure(e)
         }
     }
+    /**
+     * Pobiera kategorie treningowe użytkownika z Firebase
+     */
+    suspend fun getUserWorkoutCategories(userId: String): Result<List<WorkoutCategory>> {
+        return try {
+            // Pobierz zarówno domyślne kategorie, jak i kategorie użytkownika
+            val snapshot = workoutCategoriesCollection
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
 
+            // Pobierz również kategorie domyślne
+            val defaultSnapshot = workoutCategoriesCollection
+                .whereEqualTo("isDefault", true)
+                .get()
+                .await()
+
+            // Połącz wyniki
+            val userCategories = snapshot.documents.map { doc ->
+                WorkoutCategory.fromMap(doc.id, doc.data ?: mapOf())
+            }
+
+            val defaultCategories = defaultSnapshot.documents.map { doc ->
+                WorkoutCategory.fromMap(doc.id, doc.data ?: mapOf())
+            }
+
+            // Uwaga: domyślne kategorie mogły zostać już pobrane w pierwszym zapytaniu,
+            // więc trzeba odfiltrować duplikaty (po id)
+            val allCategories = (userCategories + defaultCategories)
+                .distinctBy { it.id }
+
+            Result.success(allCategories)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Pobiera kategorię treningową z Firebase
+     */
+    suspend fun getWorkoutCategory(categoryId: String): Result<WorkoutCategory> {
+        return try {
+            val doc = workoutCategoriesCollection.document(categoryId).get().await()
+
+            if (doc.exists()) {
+                val category = WorkoutCategory.fromMap(doc.id, doc.data ?: mapOf())
+                Result.success(category)
+            } else {
+                Result.failure(Exception("Workout category not found"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Tworzy kategorię treningową w Firebase
+     */
+    suspend fun createWorkoutCategory(category: WorkoutCategory): Result<WorkoutCategory> {
+        return try {
+            val docRef = if (category.id.isEmpty()) {
+                workoutCategoriesCollection.document()
+            } else {
+                workoutCategoriesCollection.document(category.id)
+            }
+
+            val categoryWithId = if (category.id.isEmpty()) {
+                category.copy(id = docRef.id)
+            } else {
+                category
+            }
+
+            docRef.set(categoryWithId.toMap()).await()
+            Result.success(categoryWithId)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Aktualizuje kategorię treningową w Firebase
+     */
+    suspend fun updateWorkoutCategory(category: WorkoutCategory): Result<Unit> {
+        return try {
+            workoutCategoriesCollection.document(category.id).set(category.toMap()).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Usuwa kategorię treningową z Firebase
+     */
+    suspend fun deleteWorkoutCategory(categoryId: String): Result<Unit> {
+        return try {
+            workoutCategoriesCollection.document(categoryId).delete().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
     /**
      * Określa dostawcę uwierzytelniania na podstawie danych FirebaseUser
      */

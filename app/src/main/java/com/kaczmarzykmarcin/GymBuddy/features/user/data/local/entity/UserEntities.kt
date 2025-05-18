@@ -79,7 +79,8 @@ data class WorkoutTemplateEntity(
     val userId: String,
     val name: String,
     val description: String,
-    val exercises: List<String>, // Lista ID ćwiczeń
+    val categoryId: String?, // Nowe pole
+    val exercises: List<String>,
     val createdAt: Timestamp,
     val updatedAt: Timestamp,
     val lastSyncTime: Long = System.currentTimeMillis(),
@@ -93,10 +94,25 @@ data class CompletedWorkoutEntity(
     val userId: String,
     val name: String,
     val templateId: String?,
+    val categoryId: String?, // Nowe pole
     val startTime: Timestamp,
     val endTime: Timestamp?,
-    val duration: Long, // w minutach
+    val duration: Long,
     val exercises: String, // Serializowany JSON List<CompletedExercise>
+    val lastSyncTime: Long = System.currentTimeMillis(),
+    val needsSync: Boolean = false
+)
+
+// Dodaj do UserEntities.kt
+@Entity(tableName = "workout_categories")
+@TypeConverters(TimestampConverter::class)
+data class WorkoutCategoryEntity(
+    @PrimaryKey val id: String,
+    val userId: String,
+    val name: String,
+    val color: String,
+    val createdAt: Timestamp,
+    val isDefault: Boolean,
     val lastSyncTime: Long = System.currentTimeMillis(),
     val needsSync: Boolean = false
 )

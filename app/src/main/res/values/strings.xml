@@ -140,6 +140,20 @@
     <string name="discard_changes">Discard changes</string>
     <string name="discard_changes_confirmation">Are you sure to discard changes?</string>
     <string name="close">Close</string>
+    <string name="workout_category">Workout category</string>
+    <string name="select_workout_category">Select workout category</string>
+    <string name="search_categories">Search category</string>
+    <string name="add_new_category">Add new category</string>
+    <string name="done">Done</string>
+    <string name="manage_categories">Manage categories</string>
+    <string name="add_category">Add category</string>
+    <string name="delete_category">Delete category</string>
+    <string name="delete_category_confirmation">Are you sure to delete category?</string>
+    <string name="delete">Delete</string>
+    <string name="default_label">Deafult label</string>
+    <string name="edit_category">Edit category</string>
+    <string name="category_name">Category name</string>
+    <string name="category_color">Category color</string>
 
 
 </resources>

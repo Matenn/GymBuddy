@@ -160,6 +160,7 @@ class UserMappers(private val gson: Gson) {
             userId = model.userId,
             name = model.name,
             description = model.description,
+            categoryId = model.categoryId, // Dodany parametr
             exercises = model.exercises,
             createdAt = model.createdAt,
             updatedAt = model.updatedAt,
@@ -174,6 +175,7 @@ class UserMappers(private val gson: Gson) {
             userId = entity.userId,
             name = entity.name,
             description = entity.description,
+            categoryId = entity.categoryId, // Dodany parametr
             exercises = entity.exercises,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt
@@ -187,6 +189,7 @@ class UserMappers(private val gson: Gson) {
             userId = model.userId,
             name = model.name,
             templateId = model.templateId,
+            categoryId = model.categoryId, // Dodany parametr
             startTime = model.startTime,
             endTime = model.endTime,
             duration = model.duration,
@@ -209,6 +212,7 @@ class UserMappers(private val gson: Gson) {
             userId = entity.userId,
             name = entity.name,
             templateId = entity.templateId,
+            categoryId = entity.categoryId, // Dodany parametr
             startTime = entity.startTime,
             endTime = entity.endTime,
             duration = entity.duration,
@@ -246,6 +250,30 @@ class UserMappers(private val gson: Gson) {
             profile = toModel(userProfileEntity),
             stats = toModel(userStatsEntity),
             achievements = achievementEntities.map { toModel(it) }
+        )
+    }
+    // WorkoutCategory
+    fun toEntity(model: WorkoutCategory, needsSync: Boolean = false): WorkoutCategoryEntity {
+        return WorkoutCategoryEntity(
+            id = model.id,
+            userId = model.userId,
+            name = model.name,
+            color = model.color,
+            createdAt = model.createdAt,
+            isDefault = model.isDefault,
+            needsSync = needsSync,
+            lastSyncTime = System.currentTimeMillis()
+        )
+    }
+
+    fun toModel(entity: WorkoutCategoryEntity): WorkoutCategory {
+        return WorkoutCategory(
+            id = entity.id,
+            userId = entity.userId,
+            name = entity.name,
+            color = entity.color,
+            createdAt = entity.createdAt,
+            isDefault = entity.isDefault
         )
     }
 }

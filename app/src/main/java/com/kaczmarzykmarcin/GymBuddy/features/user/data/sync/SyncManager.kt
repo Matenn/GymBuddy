@@ -30,6 +30,7 @@ class SyncManager @Inject constructor(
     private val userAchievementDao: UserAchievementDao,
     private val workoutTemplateDao: WorkoutTemplateDao,
     private val workoutDao: WorkoutDao,
+    private val workoutCategoryDao: WorkoutCategoryDao,
     private val remoteDataSource: RemoteUserDataSource,
     private val mappers: UserMappers,
     private val networkManager: NetworkConnectivityManager
@@ -93,6 +94,21 @@ class SyncManager @Inject constructor(
         }
     }
 
+    private suspend fun syncWorkoutCategories() {
+        val workoutCategoriesToSync = workoutCategoryDao.getWorkoutCategoriesToSync()
+
+        for (workoutCategoryEntity in workoutCategoriesToSync) {
+            try {
+                val workoutCategoryModel = mappers.toModel(workoutCategoryEntity)
+                remoteDataSource.updateWorkoutCategory(workoutCategoryModel)
+
+                // Oznacz jako zsynchronizowane
+                workoutCategoryDao.updateWorkoutCategory(workoutCategoryEntity.copy(needsSync = false, lastSyncTime = System.currentTimeMillis()))
+            } catch (e: Exception) {
+                Log.e(TAG, "Error syncing workout category: ${workoutCategoryEntity.id}", e)
+            }
+        }
+    }
     /**
      * Synchronizuje dane między lokalną a zdalną bazą danych
      */
@@ -125,6 +141,9 @@ class SyncManager @Inject constructor(
 
             // Synchronizacja historii treningów
             syncCompletedWorkouts()
+
+            // Synchronizacja kategorii
+            syncWorkoutCategories()
 
             _lastSyncTime.value = System.currentTimeMillis()
             _syncState.value = SyncState.Success
@@ -268,6 +287,7 @@ class SyncManager @Inject constructor(
                 Log.e(TAG, "Error syncing completed workout: ${completedWorkoutEntity.id}", e)
             }
         }
+
     }
 
     companion object {

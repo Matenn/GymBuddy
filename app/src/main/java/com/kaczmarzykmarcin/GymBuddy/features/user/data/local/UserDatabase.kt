@@ -12,6 +12,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserAchievemen
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserProfileDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserStatsDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserAuthDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutCategoryDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutTemplateDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserEntity
@@ -20,6 +21,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserProfile
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserStatsEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserAuthEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.CompletedWorkoutEntity
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutCategoryEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemplateEntity
 
 /**
@@ -33,9 +35,10 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemp
         UserStatsEntity::class,
         UserAuthEntity::class,
         CompletedWorkoutEntity::class,
-        WorkoutTemplateEntity::class
+        WorkoutTemplateEntity::class,
+        WorkoutCategoryEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(TimestampConverter::class, MapConverter::class)
@@ -48,6 +51,7 @@ abstract class UserDatabase : RoomDatabase() {
     abstract fun userAuthDao(): UserAuthDao
     abstract fun workoutDao(): WorkoutDao
     abstract fun workoutTemplateDao(): WorkoutTemplateDao
+    abstract fun workoutCategoryDao(): WorkoutCategoryDao
 
     companion object {
         private const val DATABASE_NAME = "user_database"

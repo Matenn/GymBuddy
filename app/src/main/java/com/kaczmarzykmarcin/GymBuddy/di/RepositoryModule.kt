@@ -5,10 +5,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.gson.Gson
 import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
-import com.kaczmarzykmarcin.GymBuddy.data.repository.AchievementRepository
-import com.kaczmarzykmarcin.GymBuddy.data.repository.ExerciseRepository
-import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
-import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+import com.kaczmarzykmarcin.GymBuddy.data.repository.*
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.ExerciseJsonParser
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.dao.ExerciseDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.*
@@ -71,13 +68,30 @@ object RepositoryModule {
         userAchievementDao: UserAchievementDao,
         workoutTemplateDao: WorkoutTemplateDao,
         workoutDao: WorkoutDao,
+        workoutCategoryDao: WorkoutCategoryDao, // Dodany parametr
         remoteDataSource: RemoteUserDataSource,
         mappers: UserMappers,
         networkManager: NetworkConnectivityManager
     ): SyncManager {
         return SyncManager(
             context, userDao, userAuthDao, userProfileDao, userStatsDao,
-            userAchievementDao, workoutTemplateDao, workoutDao, remoteDataSource, mappers, networkManager
+            userAchievementDao, workoutTemplateDao, workoutDao, workoutCategoryDao,
+            remoteDataSource, mappers, networkManager
+        )
+    }
+
+    // Dodane nowe repozytorium
+    @Provides
+    @Singleton
+    fun provideWorkoutCategoryRepository(
+        workoutCategoryDao: WorkoutCategoryDao,
+        remoteDataSource: RemoteUserDataSource,
+        syncManager: SyncManager,
+        networkManager: NetworkConnectivityManager,
+        mappers: UserMappers
+    ): WorkoutCategoryRepository {
+        return WorkoutCategoryRepository(
+            workoutCategoryDao, remoteDataSource, syncManager, networkManager, mappers
         )
     }
 
@@ -122,7 +136,7 @@ object RepositoryModule {
         userAchievementDao: UserAchievementDao,
         syncManager: SyncManager,
         mappers: UserMappers,
-        workoutRepository: WorkoutRepository  // Zależność
+        workoutRepository: WorkoutRepository
     ): UserRepository {
         return UserRepository(
             auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
@@ -130,4 +144,3 @@ object RepositoryModule {
         )
     }
 }
-

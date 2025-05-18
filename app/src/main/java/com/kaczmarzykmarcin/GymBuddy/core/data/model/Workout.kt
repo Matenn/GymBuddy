@@ -6,12 +6,14 @@ import com.google.firebase.firestore.DocumentId
 /**
  * Klasa reprezentująca szablon treningu.
  */
+// Aktualizacja w Workout.kt
 data class WorkoutTemplate(
     @DocumentId val id: String = "",
     val userId: String = "",
-    val name: String = "",  // np. "Klata i triceps"
-    val description: String = "", // np. "Bench press, csodaodaosa, doasdoa"
-    val exercises: List<String> = emptyList(), // Lista ID ćwiczeń
+    val name: String = "",
+    val description: String = "",
+    val categoryId: String? = null, // Dodane pole
+    val exercises: List<String> = emptyList(),
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
 ) {
@@ -20,6 +22,7 @@ data class WorkoutTemplate(
         "userId" to userId,
         "name" to name,
         "description" to description,
+        "categoryId" to categoryId, // Nowe pole
         "exercises" to exercises,
         "createdAt" to createdAt,
         "updatedAt" to updatedAt
@@ -31,6 +34,7 @@ data class WorkoutTemplate(
             userId = map["userId"] as? String ?: "",
             name = map["name"] as? String ?: "",
             description = map["description"] as? String ?: "",
+            categoryId = map["categoryId"] as? String, // Nowe pole
             exercises = (map["exercises"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
             createdAt = map["createdAt"] as? Timestamp ?: Timestamp.now(),
             updatedAt = map["updatedAt"] as? Timestamp ?: Timestamp.now()
@@ -41,14 +45,16 @@ data class WorkoutTemplate(
 /**
  * Klasa reprezentująca wykonany trening.
  */
+// Aktualizacja w Workout.kt
 data class CompletedWorkout(
     @DocumentId val id: String = "",
     val userId: String = "",
     val name: String = "",
     val templateId: String? = null,
+    val categoryId: String? = null, // Dodane pole
     val startTime: Timestamp = Timestamp.now(),
     val endTime: Timestamp? = null,
-    val duration: Long = 0, // teraz w sekundach zamiast w minutach
+    val duration: Long = 0,
     val exercises: List<CompletedExercise> = emptyList()
 ) {
     // Przydatne metody konwersji do/z Map dla Firestore
@@ -56,9 +62,10 @@ data class CompletedWorkout(
         "userId" to userId,
         "name" to name,
         "templateId" to templateId,
+        "categoryId" to categoryId, // Nowe pole
         "startTime" to startTime,
         "endTime" to endTime,
-        "duration" to duration, // przechowuje sekundy
+        "duration" to duration,
         "exercises" to exercises.map { it.toMap() }
     )
 
@@ -68,14 +75,18 @@ data class CompletedWorkout(
             userId = map["userId"] as? String ?: "",
             name = map["name"] as? String ?: "",
             templateId = map["templateId"] as? String,
+            categoryId = map["categoryId"] as? String, // Nowe pole
             startTime = map["startTime"] as? Timestamp ?: Timestamp.now(),
             endTime = map["endTime"] as? Timestamp,
-            duration = (map["duration"] as? Long) ?: 0L, // teraz w sekundach
+            duration = (map["duration"] as? Long) ?: 0L,
             exercises = (map["exercises"] as? List<*>)?.mapNotNull {
                 (it as? Map<*, *>)?.let { CompletedExercise.fromMap(it) }
             } ?: emptyList()
         )
     }
+
+
+
 
     /**
      * Oblicza czas trwania treningu w sekundach.

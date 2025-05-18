@@ -12,6 +12,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserStatsEn
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserAchievementEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemplateEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.CompletedWorkoutEntity
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutCategoryEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -129,6 +130,9 @@ interface WorkoutTemplateDao {
 
     @Query("DELETE FROM workout_templates WHERE id = :templateId")
     suspend fun deleteWorkoutTemplate(templateId: String)
+
+    @Query("SELECT * FROM workout_templates WHERE userId = :userId AND categoryId = :categoryId ORDER BY updatedAt DESC")
+    fun getWorkoutTemplatesByCategory(userId: String, categoryId: String): Flow<List<WorkoutTemplateEntity>>
 }
 
 @Dao
@@ -156,4 +160,36 @@ interface WorkoutDao {
 
     @Query("DELETE FROM completed_workouts WHERE id = :workoutId")
     suspend fun deleteCompletedWorkout(workoutId: String)
+
+
+    @Query("SELECT * FROM completed_workouts WHERE userId = :userId AND categoryId = :categoryId AND endTime IS NOT NULL ORDER BY endTime DESC")
+    fun getCompletedWorkoutsByCategory(userId: String, categoryId: String): Flow<List<CompletedWorkoutEntity>>
+
+
+}
+
+
+@Dao
+interface WorkoutCategoryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWorkoutCategory(workoutCategory: WorkoutCategoryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWorkoutCategories(workoutCategories: List<WorkoutCategoryEntity>)
+
+
+    @Update
+    suspend fun updateWorkoutCategory(workoutCategory: WorkoutCategoryEntity)
+
+    @Query("SELECT * FROM workout_categories WHERE id = :categoryId")
+    suspend fun getWorkoutCategoryById(categoryId: String): WorkoutCategoryEntity?
+
+    @Query("SELECT * FROM workout_categories WHERE userId = :userId OR isDefault = 1 ORDER BY name ASC")
+    fun getWorkoutCategoriesByUserId(userId: String): Flow<List<WorkoutCategoryEntity>>
+
+    @Query("SELECT * FROM workout_categories WHERE needsSync = 1")
+    suspend fun getWorkoutCategoriesToSync(): List<WorkoutCategoryEntity>
+
+    @Query("DELETE FROM workout_categories WHERE id = :categoryId AND isDefault = 0")
+    suspend fun deleteWorkoutCategory(categoryId: String)
 }

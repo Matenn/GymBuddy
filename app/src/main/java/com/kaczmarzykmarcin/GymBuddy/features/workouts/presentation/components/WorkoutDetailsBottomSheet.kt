@@ -1,5 +1,8 @@
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +21,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,11 +38,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -55,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
@@ -63,12 +71,15 @@ import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
 
+// W WorkoutDetailsBottomSheet.kt
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutDetailsBottomSheet(
     workout: CompletedWorkout,
     onDismiss: () -> Unit,
     onWorkoutUpdate: (CompletedWorkout) -> Unit,
+    navController: NavController? = null,
     workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
     val sheetState = rememberModalBottomSheetState(
@@ -76,23 +87,39 @@ fun WorkoutDetailsBottomSheet(
     )
     val scope = rememberCoroutineScope()
 
+    // Dodaj stan dla dialogu wyboru kategorii
+    var showCategoryPicker by remember { mutableStateOf(false) }
+
+    // Kluczowa zmiana - dodaj workout jako klucz remember, aby reagować na zmiany
+    var selectedCategoryId by remember(workout) { mutableStateOf(workout.categoryId) }
+
+    // Pobierz kategorie z ViewModel
+    val categories by workoutViewModel.categories.collectAsState(initial = emptyList())
+    val selectedCategory = remember(selectedCategoryId, categories) {
+        categories.find { it.id == selectedCategoryId }
+    }
+
     // State tracking
     var isEditMode by remember { mutableStateOf(false) }
     var showExerciseSelection by remember { mutableStateOf(false) }
     var showNameEditDialog by remember { mutableStateOf(false) }
     var showDiscardChangesDialog by remember { mutableStateOf(false) }
-    var workoutName by remember { mutableStateOf(workout.name) }
 
-    // Local state for workout exercises - initialize with the current workout exercises
-    val exercises = remember(workout.id, isEditMode) { mutableStateListOf<CompletedExercise>().apply {
+    // Kluczowa zmiana - dodaj workout jako klucz remember, aby reagować na zmiany
+    var workoutName by remember(workout) { mutableStateOf(workout.name) }
+
+    // Kluczowa zmiana - użyj workout jako klucza, aby reagować na zmiany w obiekcie workout
+    val exercises = remember(workout) { mutableStateListOf<CompletedExercise>().apply {
+        clear() // Wyczyść listę przed dodaniem nowych ćwiczeń
         addAll(workout.exercises)
     }}
 
-    // Local copy of the workout for editing - remember both workout and exercises changes
-    val editedWorkout = remember(workout, exercises, workoutName) {
+    // Lokalny copy workoutu dla edycji - z uwzględnieniem workout jako klucza
+    val editedWorkout = remember(workout, exercises, workoutName, selectedCategoryId) {
         workout.copy(
             name = workoutName,
-            exercises = exercises.toList()
+            exercises = exercises.toList(),
+            categoryId = selectedCategoryId
         )
     }
 
@@ -152,6 +179,7 @@ fun WorkoutDetailsBottomSheet(
                     isEditMode = false
                     // Reset to original values
                     workoutName = workout.name
+                    selectedCategoryId = workout.categoryId
                     exercises.clear()
                     exercises.addAll(workout.exercises)
                 }) {
@@ -168,7 +196,7 @@ fun WorkoutDetailsBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = {
-            if (isEditMode && (workout.exercises != exercises || workout.name != workoutName)) {
+            if (isEditMode && (workout.exercises != exercises || workout.name != workoutName || workout.categoryId != selectedCategoryId)) {
                 showDiscardChangesDialog = true
             } else {
                 onDismiss()
@@ -181,11 +209,7 @@ fun WorkoutDetailsBottomSheet(
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
-            // Top controls
-            // Fixed top controls section for WorkoutDetailsBottomSheet
-// Replace the existing top controls Row with this:
-
-// Top controls - tylko przyciski
+            // Top controls - tylko przyciski
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -200,7 +224,7 @@ fun WorkoutDetailsBottomSheet(
                 ) {
                     if (isEditMode) {
                         IconButton(onClick = {
-                            if (workout.exercises != exercises || workout.name != workoutName) {
+                            if (workout.exercises != exercises || workout.name != workoutName || workout.categoryId != selectedCategoryId) {
                                 showDiscardChangesDialog = true
                             } else {
                                 isEditMode = false
@@ -235,7 +259,8 @@ fun WorkoutDetailsBottomSheet(
                                 // Save changes
                                 val updatedWorkout = workout.copy(
                                     name = workoutName,
-                                    exercises = exercises.toList()
+                                    exercises = exercises.toList(),
+                                    categoryId = selectedCategoryId
                                 )
                                 onWorkoutUpdate(updatedWorkout)
                                 isEditMode = false
@@ -261,14 +286,14 @@ fun WorkoutDetailsBottomSheet(
                 }
             }
 
-// Czas trwania treningu - wyświetlany nad tytułem (tylko w trybie podglądu)
+            // Czas trwania treningu - wyświetlany nad tytułem (tylko w trybie podglądu)
             if (!isEditMode) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp),
 
-                ) {
+                    ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -285,6 +310,111 @@ fun WorkoutDetailsBottomSheet(
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+            }
+
+            // W trybie edycji, dodaj wiersz do wyboru kategorii
+            if (isEditMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.workout_category),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+
+                    // Przycisk wyboru kategorii
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(24.dp))
+                            .clickable { showCategoryPicker = true }
+                            .border(
+                                width = 1.dp,
+                                color = selectedCategory?.let {
+                                    Color(android.graphics.Color.parseColor(it.color))
+                                } ?: Color.Gray,
+                                shape = RoundedCornerShape(24.dp)
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            selectedCategory?.let {
+                                Box(
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(android.graphics.Color.parseColor(it.color)))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(it.name)
+                            } ?: Text(
+                                text = stringResource(R.string.select_category),
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                }
+
+                // Dialog wyboru kategorii w trybie edycji
+                if (showCategoryPicker) {
+                    CategoryPickerDialog(
+                        categories = categories,
+                        selectedCategoryId = selectedCategoryId,
+                        onCategorySelected = { categoryId ->
+                            selectedCategoryId = categoryId
+                            showCategoryPicker = false
+                        },
+                        onDismissRequest = { showCategoryPicker = false },
+                        navController = navController
+                    )
+                }
+            }
+            // W trybie podglądu, tylko wyświetl kategorię (jeśli istnieje)
+            else {
+                workout.categoryId?.let { catId ->
+                    val categoriesState by workoutViewModel.categories.collectAsState(initial = emptyList())
+                    val category = categoriesState.find { it.id == catId }
+
+                    category?.let {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.workout_category) + ":",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Etykieta kategorii
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = Color(android.graphics.Color.parseColor(category.color)),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = category.name,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
             }

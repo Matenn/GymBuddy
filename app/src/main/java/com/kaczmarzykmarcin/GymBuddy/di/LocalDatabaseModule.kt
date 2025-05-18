@@ -5,6 +5,8 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.LocalExerciseDatabase
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.dao.ExerciseDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.UserDatabase
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutCategoryDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,5 +39,11 @@ object LocalDatabaseModule {
         database: LocalExerciseDatabase
     ): ExerciseDao {
         return database.exerciseDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideWorkoutCategoryDao(userDatabase: UserDatabase): WorkoutCategoryDao {
+        return userDatabase.workoutCategoryDao()
     }
 }

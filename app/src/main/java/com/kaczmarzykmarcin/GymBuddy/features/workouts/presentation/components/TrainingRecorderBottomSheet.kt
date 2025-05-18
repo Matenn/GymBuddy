@@ -1,5 +1,7 @@
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -53,6 +57,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -63,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
@@ -80,12 +86,23 @@ fun TrainingRecorderBottomSheet(
     onDismiss: () -> Unit,
     onWorkoutFinish: (CompletedWorkout) -> Unit,
     onWorkoutCancel: (CompletedWorkout) -> Unit,
+    navController: NavController? = null,
     workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true
     )
     val scope = rememberCoroutineScope()
+
+    // Dodaj stan dla dialogu wyboru kategorii
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var selectedCategoryId by remember(workout.categoryId) { mutableStateOf(workout.categoryId) }
+
+// Pobierz kategorie z ViewModel
+    val categories by workoutViewModel.categories.collectAsState(initial = emptyList())
+    val selectedCategory = remember(selectedCategoryId, categories) {
+        categories.find { it.id == selectedCategoryId }
+    }
 
     var showExerciseSelection by remember { mutableStateOf(false) }
     var showCancelConfirmation by remember { mutableStateOf(false) }
@@ -293,6 +310,75 @@ fun TrainingRecorderBottomSheet(
                         contentDescription = stringResource(R.string.edit_workout_name)
                     )
                 }
+            }
+
+            // Dodaj row do wyboru kategorii
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.workout_category),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+
+                // Przycisk wyboru kategorii
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(24.dp))
+                        .clickable { showCategoryPicker = true }
+                        .border(
+                            width = 1.dp,
+                            color = selectedCategory?.let {
+                                Color(android.graphics.Color.parseColor(it.color))
+                            } ?: Color.Gray,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        selectedCategory?.let {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(android.graphics.Color.parseColor(it.color)))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(it.name)
+                        } ?: Text(
+                            text = stringResource(R.string.select_category),
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+
+// Dialog wyboru kategorii
+            if (showCategoryPicker) {
+                CategoryPickerDialog(
+                    categories = categories,
+                    selectedCategoryId = selectedCategoryId,
+                    onCategorySelected = { categoryId ->
+                        selectedCategoryId = categoryId
+
+                        // Aktualizuj trening z nową kategorią
+                        val updatedWorkout = workout.copy(categoryId = categoryId)
+                        workoutViewModel.updateWorkout(updatedWorkout)
+
+                        // Zamknij dialog
+                        showCategoryPicker = false
+                    },
+                    onDismissRequest = { showCategoryPicker = false },
+                    navController = navController // Jeśli dostępny, umożliwi przejście do zarządzania kategoriami
+                )
             }
 
             // Main content (exercise list) - Now uses weight to take remaining space

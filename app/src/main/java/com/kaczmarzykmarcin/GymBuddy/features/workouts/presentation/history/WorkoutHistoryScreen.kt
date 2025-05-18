@@ -387,13 +387,18 @@ fun WorkoutHistoryScreen(
                 selectedWorkoutId = null
             },
             onWorkoutUpdate = { updatedWorkout ->
-                // Użyj coroutineScope do wywołania funkcji suspend
+                // Use coroutineScope to call suspend functions
                 coroutineScope.launch {
                     try {
                         val result = workoutRepository.updateWorkout(updatedWorkout)
                         if (result.isSuccess) {
                             Log.d(TAG, "Workout updated successfully")
-                            // Odświeżenie historii treningów po aktualizacji
+
+                            // Update the selected workout with the new data
+                            // This ensures the bottom sheet shows the updated information
+                            selectedWorkout = updatedWorkout
+
+                            // Refresh the workout history after update
                             currentUser?.let { user ->
                                 workoutHistoryViewModel.loadWorkoutHistory(user.uid)
                             }
@@ -402,11 +407,11 @@ fun WorkoutHistoryScreen(
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Exception updating workout", e)
-                    } finally {
-                        selectedWorkout = null
-                        selectedWorkoutId = null
                     }
+                    // Remove the closing of bottom sheet here
+                    // Don't set selectedWorkout and selectedWorkoutId to null
                 }
+
             }
         )
     }

@@ -290,6 +290,22 @@ class WorkoutRepository @Inject constructor(
     }
 
     /**
+     * Pobiera wszystkie ukończone treningi w danej kategorii
+     */
+    fun getCompletedWorkoutsByCategory(userId: String, categoryId: String): Flow<List<CompletedWorkout>> {
+        return workoutDao.getCompletedWorkoutsByCategory(userId, categoryId)
+            .map { entities -> entities.map { mappers.toModel(it) } }
+    }
+
+    /**
+     * Pobiera wszystkie szablony treningów w danej kategorii
+     */
+    fun getWorkoutTemplatesByCategory(userId: String, categoryId: String): Flow<List<WorkoutTemplate>> {
+        return workoutTemplateDao.getWorkoutTemplatesByCategory(userId, categoryId)
+            .map { entities -> entities.map { mappers.toModel(it) } }
+    }
+
+    /**
      * Pobiera szczegóły zakończonego treningu.
      */
     suspend fun getCompletedWorkout(workoutId: String): Result<CompletedWorkout> {
