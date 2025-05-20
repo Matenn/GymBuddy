@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -32,6 +33,10 @@ import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.BottomNavigationBar
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.Black
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.DarkGray
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.White
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,15 +49,23 @@ fun CategoryManagementScreen(
     var editingCategory by remember { mutableStateOf<WorkoutCategory?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<WorkoutCategory?>(null) }
 
+    LaunchedEffect(key1 = Unit) {
+        viewModel.loadCategories()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.manage_categories)) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = AppBackgroundLight,
+                    titleContentColor = Black
+                )
             )
         },
         bottomBar = { BottomNavigationBar(navController) },
@@ -64,16 +77,20 @@ fun CategoryManagementScreen(
             ) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_category))
             }
-        }
+        },
+        containerColor = AppBackgroundLight
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            items(categories) { category ->
+            val sortedCategories = categories.sortedBy { it.isDefault }
+
+            items(sortedCategories) { category ->
                 CategoryItem(
                     category = category,
                     onEdit = { editingCategory = category },
@@ -153,7 +170,8 @@ fun CategoryItem(
             .fillMaxWidth()
             .padding(vertical = 4.dp),
         shape = RoundedCornerShape(8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = White)
     ) {
         Row(
             modifier = Modifier
@@ -175,6 +193,7 @@ fun CategoryItem(
             Text(
                 text = category.name,
                 style = MaterialTheme.typography.titleMedium,
+                color = Black,
                 modifier = Modifier.weight(1f)
             )
 
@@ -182,7 +201,7 @@ fun CategoryItem(
             if (category.isDefault) {
                 Text(
                     text = stringResource(R.string.default_label),
-                    color = Color.Gray,
+                    color = DarkGray,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(end = 16.dp)
                 )
@@ -191,7 +210,11 @@ fun CategoryItem(
             // Action buttons (tylko dla niestandardowych kategorii)
             if (!category.isDefault) {
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.edit),
+                        tint = Black
+                    )
                 }
 
                 IconButton(onClick = onDelete) {

@@ -28,6 +28,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
 
 @Composable
 fun BottomNavigationBar(
@@ -39,7 +40,7 @@ fun BottomNavigationBar(
 
     NavigationBar(
         modifier = modifier.fillMaxWidth(),
-        containerColor = Color.White
+        containerColor = AppBackgroundLight
     ) {
         // Dashboard
         NavigationBarItem(

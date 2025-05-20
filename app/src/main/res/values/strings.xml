@@ -154,6 +154,8 @@
     <string name="edit_category">Edit category</string>
     <string name="category_name">Category name</string>
     <string name="category_color">Category color</string>
+    <string name="new_workout_template">New workout template</string>
+    <string name="edit_template_name">Edit template</string>
 
 
 </resources>

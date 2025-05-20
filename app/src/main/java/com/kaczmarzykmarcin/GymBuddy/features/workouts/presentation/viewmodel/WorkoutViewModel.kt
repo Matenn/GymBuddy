@@ -1,5 +1,3 @@
-
-
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel
 
 import android.util.Log
@@ -68,13 +66,8 @@ class WorkoutViewModel @Inject constructor(
     val selectedCategoryId: StateFlow<String?> = _selectedCategoryId
 
     // Lista wszystkich kategorii
-    val categories = workoutCategoryRepository
-        .getUserWorkoutCategories(_currentUserId.value)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Lazily,
-            initialValue = emptyList()
-        )
+    private val _categoriesFlow = MutableStateFlow<List<WorkoutCategory>>(emptyList())
+    val categories = _categoriesFlow.asStateFlow()
 
     // Treningi filtrowane po kategorii
     val filteredWorkouts = combine(
@@ -112,6 +105,8 @@ class WorkoutViewModel @Inject constructor(
             checkActiveWorkout(user.uid)
             // Initialize default categories
             initializeCategories(user.uid)
+            // Ładuj kategorie przy inicjalizacji ViewModel
+            loadCategories()
         }
     }
 
@@ -121,6 +116,22 @@ class WorkoutViewModel @Inject constructor(
     private fun initializeCategories(userId: String) {
         viewModelScope.launch {
             workoutCategoryRepository.initializeDefaultCategories(userId)
+        }
+    }
+
+    /**
+     * Ładuje kategorie treningowe dla użytkownika
+     */
+    fun loadCategories() {
+        viewModelScope.launch {
+            val userId = _currentUserId.value
+            if (userId.isNotBlank()) {
+                workoutCategoryRepository.getUserWorkoutCategories(userId)
+                    .collect { categoriesList ->
+                        _categoriesFlow.value = categoriesList
+                        Log.d(TAG, "Loaded ${categoriesList.size} categories")
+                    }
+            }
         }
     }
 
@@ -137,7 +148,15 @@ class WorkoutViewModel @Inject constructor(
                 name = name,
                 color = color
             )
-            workoutCategoryRepository.createWorkoutCategory(newCategory)
+            val result = workoutCategoryRepository.createWorkoutCategory(newCategory)
+            Log.d(TAG, "Category added: ${newCategory.name}")
+
+            // Ręczne odświeżenie listy kategorii po dodaniu
+            // To zapewnia, że kategoria pojawi się na liście nawet jeśli Flow w repozytorium
+            // nie emituje nowych wartości
+            val updatedCategories = _categoriesFlow.value.toMutableList()
+            updatedCategories.add(newCategory)
+            _categoriesFlow.value = updatedCategories
         }
     }
 
@@ -148,7 +167,16 @@ class WorkoutViewModel @Inject constructor(
         if (category.name.isBlank()) return
 
         viewModelScope.launch {
-            workoutCategoryRepository.updateWorkoutCategory(category)
+            val result = workoutCategoryRepository.updateWorkoutCategory(category)
+            Log.d(TAG, "Category updated: ${category.name}")
+
+            // Ręczne odświeżenie listy kategorii po aktualizacji
+            val updatedCategories = _categoriesFlow.value.toMutableList()
+            val index = updatedCategories.indexOfFirst { it.id == category.id }
+            if (index != -1) {
+                updatedCategories[index] = category
+                _categoriesFlow.value = updatedCategories
+            }
         }
     }
 
@@ -183,7 +211,13 @@ class WorkoutViewModel @Inject constructor(
             }
 
             // Usuń kategorię
-            workoutCategoryRepository.deleteWorkoutCategory(categoryId)
+            val result = workoutCategoryRepository.deleteWorkoutCategory(categoryId)
+            Log.d(TAG, "Category deleted: $categoryId")
+
+            // Ręczne odświeżenie listy kategorii po usunięciu
+            val updatedCategories = _categoriesFlow.value.toMutableList()
+            updatedCategories.removeAll { it.id == categoryId }
+            _categoriesFlow.value = updatedCategories
 
             // Jeśli usunięta kategoria była wybrana, zresetuj filtr
             if (_selectedCategoryId.value == categoryId) {
@@ -207,8 +241,6 @@ class WorkoutViewModel @Inject constructor(
 
         return workoutCategoryRepository.getWorkoutCategory(categoryId).getOrNull()
     }
-
-    // Pozostałe istniejące metody...
 
     /**
      * Loads user's workout templates from the repository
@@ -325,8 +357,6 @@ class WorkoutViewModel @Inject constructor(
             }
         }
     }
-
-    // Pozostałe metody bez zmian...
 
     /**
      * Updates the current active workout

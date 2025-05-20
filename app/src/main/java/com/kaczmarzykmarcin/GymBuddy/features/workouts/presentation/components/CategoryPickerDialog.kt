@@ -5,9 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +26,7 @@ import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import androidx.core.graphics.toColorInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,7 +70,7 @@ fun CategoryPickerDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 8.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .clickable { onCategorySelected(null) }
                         .border(
                             width = 1.dp,
@@ -90,17 +90,15 @@ fun CategoryPickerDialog(
                     )
                 }
 
-                // Siatka kategorii (wyświetla 2 kategorie w wierszu)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                // Lista kategorii (jedna pod drugą)
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(250.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredCategories) { category ->
-                        CategoryGridItem(
+                        CategoryListItem(
                             category = category,
                             isSelected = selectedCategoryId == category.id,
                             onClick = { onCategorySelected(category.id) }
@@ -145,20 +143,20 @@ fun CategoryPickerDialog(
 }
 
 @Composable
-fun CategoryGridItem(
+fun CategoryListItem(
     category: WorkoutCategory,
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
     val backgroundColor = remember(category.color) {
-        Color(android.graphics.Color.parseColor(category.color))
+        Color(category.color.toColorInt())
     }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(2f)
-            .clip(RoundedCornerShape(8.dp))
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp))
             .clickable(onClick = onClick)
             .border(
                 width = if (isSelected) 2.dp else 0.dp,

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -92,12 +93,31 @@ fun WorkoutScreen(
                 .padding(paddingValues) // Używamy paddingValues przekazanego z AppScaffold
                 .verticalScroll(rememberScrollState())
         ) {
-            Text(
-                text = stringResource(R.string.training),
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(8.dp)
-            )
+            // Title row with settings icon
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.training),
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.weight(1f)
+                )
 
+                // Settings icon that navigates to the category management screen
+                IconButton(
+                    onClick = {
+                        navController.navigate(NavigationRoutes.CATEGORY_MANAGEMENT)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.manage_categories)
+                    )
+                }
+            }
             // Search field
             Card(
                 modifier = Modifier
