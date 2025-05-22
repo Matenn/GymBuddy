@@ -153,15 +153,15 @@ class UserMappers(private val gson: Gson) {
         )
     }
 
-    // WorkoutTemplate
+    // WorkoutTemplate - Zmienione aby obsługiwać List<CompletedExercise> zamiast List<String>
     fun toEntity(model: WorkoutTemplate, needsSync: Boolean = false): WorkoutTemplateEntity {
         return WorkoutTemplateEntity(
             id = model.id,
             userId = model.userId,
             name = model.name,
             description = model.description,
-            categoryId = model.categoryId, // Dodany parametr
-            exercises = model.exercises,
+            categoryId = model.categoryId,
+            exercises = gson.toJson(model.exercises.map { it.toMap() }), // Serializacja do JSON
             createdAt = model.createdAt,
             updatedAt = model.updatedAt,
             needsSync = needsSync,
@@ -170,13 +170,36 @@ class UserMappers(private val gson: Gson) {
     }
 
     fun toModel(entity: WorkoutTemplateEntity): WorkoutTemplate {
+        // Add robust error handling for JSON parsing
+        val completedExercises = try {
+            val exercisesType = object : TypeToken<List<Map<String, Any?>>>() {}.type
+            val exercisesMaps = gson.fromJson<List<Map<String, Any?>>>(entity.exercises, exercisesType)
+            exercisesMaps?.map { CompletedExercise.fromMap(it) } ?: emptyList()
+        } catch (e: Exception) {
+            // If parsing fails, try to determine what format we have
+            try {
+                // Maybe it's a list of strings (exercise IDs) instead of a list of objects?
+                val exerciseIdsType = object : TypeToken<List<String>>() {}.type
+                val exerciseIds = gson.fromJson<List<String>>(entity.exercises, exerciseIdsType)
+
+                // If so, convert each ID to a minimal CompletedExercise
+                exerciseIds?.map {
+                    CompletedExercise(exerciseId = it, name = "", category = "", sets = emptyList())
+                } ?: emptyList()
+            } catch (e2: Exception) {
+                // If all parsing attempts fail, log the error and return empty list
+                android.util.Log.e("UserMappers", "Failed to parse exercises JSON: ${entity.exercises}", e2)
+                emptyList()
+            }
+        }
+
         return WorkoutTemplate(
             id = entity.id,
             userId = entity.userId,
             name = entity.name,
             description = entity.description,
-            categoryId = entity.categoryId, // Dodany parametr
-            exercises = entity.exercises,
+            categoryId = entity.categoryId,
+            exercises = completedExercises, // The safely parsed list
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt
         )
@@ -189,7 +212,7 @@ class UserMappers(private val gson: Gson) {
             userId = model.userId,
             name = model.name,
             templateId = model.templateId,
-            categoryId = model.categoryId, // Dodany parametr
+            categoryId = model.categoryId,
             startTime = model.startTime,
             endTime = model.endTime,
             duration = model.duration,
@@ -212,7 +235,7 @@ class UserMappers(private val gson: Gson) {
             userId = entity.userId,
             name = entity.name,
             templateId = entity.templateId,
-            categoryId = entity.categoryId, // Dodany parametr
+            categoryId = entity.categoryId,
             startTime = entity.startTime,
             endTime = entity.endTime,
             duration = entity.duration,
@@ -252,6 +275,7 @@ class UserMappers(private val gson: Gson) {
             achievements = achievementEntities.map { toModel(it) }
         )
     }
+
     // WorkoutCategory
     fun toEntity(model: WorkoutCategory, needsSync: Boolean = false): WorkoutCategoryEntity {
         return WorkoutCategoryEntity(

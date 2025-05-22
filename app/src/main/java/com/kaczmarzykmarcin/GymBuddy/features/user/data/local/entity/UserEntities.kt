@@ -5,7 +5,9 @@ import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
 import com.google.firebase.Timestamp
 import com.kaczmarzykmarcin.GymBuddy.data.model.AuthProvider
+import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.converter.StringListConverter
+
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.converter.TimestampConverter
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.converter.MapConverter
 
@@ -73,14 +75,14 @@ data class UserAchievementEntity(
 )
 
 @Entity(tableName = "workout_templates")
-@TypeConverters(TimestampConverter::class, StringListConverter::class)
+@TypeConverters(TimestampConverter::class)
 data class WorkoutTemplateEntity(
     @PrimaryKey val id: String,
     val userId: String,
     val name: String,
     val description: String,
     val categoryId: String?, // Nowe pole
-    val exercises: List<String>,
+    val exercises: String, // Zmiana z List<String> na List<CompletedExercise>
     val createdAt: Timestamp,
     val updatedAt: Timestamp,
     val lastSyncTime: Long = System.currentTimeMillis(),

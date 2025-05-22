@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -42,15 +43,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
-
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.ActiveWorkoutMiniBar
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.TrainingRecorderBottomSheet
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutTemplateBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
 
@@ -61,13 +63,21 @@ fun WorkoutScreen(
 ) {
     val workoutTemplates by workoutViewModel.workoutTemplates.collectAsState()
     val activeWorkout by workoutViewModel.activeWorkout.collectAsState()
+    val showWorkoutRecorder by workoutViewModel.showWorkoutRecorder.collectAsState()
     val currentUserId by workoutViewModel.currentUserId.collectAsState()
+
+    // Stan dla wyświetlania bottom sheet z szczegółami szablonu
+    var selectedTemplate by remember { mutableStateOf<WorkoutTemplate?>(null) }
+    var showTemplateSheet by remember { mutableStateOf(false) }
+    var isCreatingNewTemplate by remember { mutableStateOf(false) }
 
     // Fetch user's workout templates when screen is first displayed
     LaunchedEffect(currentUserId) {
         if (currentUserId.isNotEmpty()) {
             workoutViewModel.loadWorkoutTemplates(currentUserId)
             workoutViewModel.checkActiveWorkout(currentUserId)
+            workoutViewModel.loadCategories()
+            workoutViewModel.loadAllExercises()
         }
     }
 
@@ -77,6 +87,40 @@ fun WorkoutScreen(
         if (activeWorkout == null) {
             workoutViewModel.showWorkoutRecorder(false)
         }
+    }
+
+    // Obsługa recorderów treningu i szablonu
+    if (showWorkoutRecorder && activeWorkout != null) {
+        TrainingRecorderBottomSheet(
+            workout = activeWorkout!!,
+            onDismiss = { workoutViewModel.showWorkoutRecorder(false) },
+            onWorkoutFinish = { workout -> workoutViewModel.finishWorkout(workout) },
+            onWorkoutCancel = { workout -> workoutViewModel.cancelWorkout(workout.id) },
+            navController = navController
+        )
+    }
+
+    if (showTemplateSheet) {
+        WorkoutTemplateBottomSheet(
+            isEditing = isCreatingNewTemplate,
+            template = selectedTemplate,
+            onDismiss = {
+                showTemplateSheet = false
+                selectedTemplate = null
+                isCreatingNewTemplate = false
+            },
+            onTemplateSave = { template ->
+                if (template.id.isEmpty()) {
+                    workoutViewModel.createWorkoutTemplate(template)
+                } else {
+                    workoutViewModel.updateWorkoutTemplate(template)
+                }
+            },
+            onTemplateDelete = { templateId ->
+                workoutViewModel.deleteWorkoutTemplate(templateId)
+            },
+            navController = navController
+        )
     }
 
     AppScaffold(
@@ -118,6 +162,7 @@ fun WorkoutScreen(
                     )
                 }
             }
+
             // Search field
             Card(
                 modifier = Modifier
@@ -176,41 +221,106 @@ fun WorkoutScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Planned workouts section
-            Text(
-                text = stringResource(R.string.planned_workouts),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(8.dp)
-            )
-
-            // Button to create a new template
-            Button(
-                onClick = { /* Navigate to template creation screen */ },
+            // Workout templates section
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFEFF1F5),
-                    contentColor = Color.Black
-                )
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = stringResource(R.string.create_new_template))
+                Text(
+                    text = stringResource(R.string.workout_templates),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Add template button
+                IconButton(
+                    onClick = {
+                        selectedTemplate = null
+                        isCreatingNewTemplate = true
+                        showTemplateSheet = true
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.create_new_template)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // List of workout templates
-            workoutTemplates.forEach { template ->
-                WorkoutTemplateItem(
-                    template = template,
-                    onEditClick = { /* Navigate to template editing */ },
-                    onTemplateClick = { /* Start workout with this template */ }
+            if (workoutTemplates.isEmpty()) {
+                // Empty state
+                EmptyTemplatesState(
+                    onClick = {
+                        selectedTemplate = null
+                        isCreatingNewTemplate = true
+                        showTemplateSheet = true
+                    }
                 )
+            } else {
+                workoutTemplates.forEach { template ->
+                    WorkoutTemplateItem(
+                        template = template,
+                        onEditClick = {
+                            selectedTemplate = template
+                            isCreatingNewTemplate = false
+                            showTemplateSheet = true
+                        },
+                        onTemplateClick = {
+                            selectedTemplate = template
+                            isCreatingNewTemplate = false
+                            showTemplateSheet = true
+                        }
+                    )
+                }
             }
 
             // Add space for the bottom elements
             Spacer(modifier = Modifier.height(80.dp))
+        }
+    }
+}
+
+@Composable
+fun EmptyTemplatesState(
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFEFF1F5)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Text(
+                text = stringResource(R.string.no_templates_yet),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.Gray
+            )
+
+            Text(
+                text = stringResource(R.string.create_first_template),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray
+            )
         }
     }
 }
@@ -245,11 +355,27 @@ fun WorkoutTemplateItem(
             ) {
                 Text(
                     text = template.name,
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
                 )
+
+                if (template.description.isNotEmpty()) {
+                    Text(
+                        text = template.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.Gray,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Display number of exercises
                 Text(
-                    text = template.description,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = stringResource(
+                        id = R.string.exercises_count,
+                        template.exercises.size
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
             }

@@ -12,8 +12,8 @@ data class WorkoutTemplate(
     val userId: String = "",
     val name: String = "",
     val description: String = "",
-    val categoryId: String? = null, // Dodane pole
-    val exercises: List<String> = emptyList(),
+    val categoryId: String? = null,
+    val exercises: List<CompletedExercise> = emptyList(), // Zmiana z List<String> na List<CompletedExercise>
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
 ) {
@@ -22,8 +22,8 @@ data class WorkoutTemplate(
         "userId" to userId,
         "name" to name,
         "description" to description,
-        "categoryId" to categoryId, // Nowe pole
-        "exercises" to exercises,
+        "categoryId" to categoryId,
+        "exercises" to exercises.map { it.toMap() }, // Konwersja CompletedExercise na Map
         "createdAt" to createdAt,
         "updatedAt" to updatedAt
     )
@@ -34,8 +34,10 @@ data class WorkoutTemplate(
             userId = map["userId"] as? String ?: "",
             name = map["name"] as? String ?: "",
             description = map["description"] as? String ?: "",
-            categoryId = map["categoryId"] as? String, // Nowe pole
-            exercises = (map["exercises"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+            categoryId = map["categoryId"] as? String,
+            exercises = (map["exercises"] as? List<*>)?.mapNotNull {
+                (it as? Map<*, *>)?.let { CompletedExercise.fromMap(it) }
+            } ?: emptyList(), // Konwersja Map na CompletedExercise
             createdAt = map["createdAt"] as? Timestamp ?: Timestamp.now(),
             updatedAt = map["updatedAt"] as? Timestamp ?: Timestamp.now()
         )

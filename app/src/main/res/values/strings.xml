@@ -156,6 +156,21 @@
     <string name="category_color">Category color</string>
     <string name="new_workout_template">New workout template</string>
     <string name="edit_template_name">Edit template</string>
+    <string name="create_first_template">Create first template</string>
+    <string name="no_templates_yet">No templates yet</string>
+    <string name="workout_templates">Workout templates</string>
+    <string name="exercises_count">Exercise count</string>
+    <string name="save_as_template">Save</string>
+    <string name="template_name">Template name</string>
+    <string name="edit_template_description">Edit template</string>
+    <string name="template_description">Edit template</string>
+    <string name="delete_template">Delete template</string>
+    <string name="delete_template_confirmation">Are you sure to delete this template?</string>
+    <string name="new_template">New template</string>
+    <string name="template_details">Template details</string>
+    <string name="no_description">No description</string>
+    <string name="start_workout_with_template">Start workout with template</string>
+    <string name="add_exercises_to_template">Add exercises to template</string>
 
 
 </resources>

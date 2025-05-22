@@ -1,13 +1,17 @@
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel
 
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
+import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.data.model.PreviousSetInfo
+import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedExercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseSet
 import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseStat
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
@@ -631,6 +635,152 @@ class WorkoutViewModel @Inject constructor(
             hourOfDay < 12 -> "Poranny Trening"
             hourOfDay < 17 -> "Popołudniowy Trening"
             else -> "Wieczorny Trening"
+        }
+    }
+
+    /**
+     * Pobiera ćwiczenie po ID
+     */
+    fun getExerciseById(exerciseId: String): Exercise? {
+        return _exercisesList.value.find { it.id == exerciseId }
+    }
+
+    /**
+     * Tworzy nowy szablon treningu
+     */
+    fun createWorkoutTemplate(template: WorkoutTemplate) {
+        viewModelScope.launch {
+            try {
+                val result = workoutRepository.createWorkoutTemplate(template)
+                if (result.isSuccess) {
+                    Log.d(TAG, "Created workout template: ${template.name}")
+                    // Reload templates
+                    loadWorkoutTemplates(template.userId)
+                } else {
+                    Log.e(TAG, "Failed to create workout template: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating workout template", e)
+            }
+        }
+    }
+
+    /**
+     * Aktualizuje istniejący szablon treningu
+     */
+    fun updateWorkoutTemplate(template: WorkoutTemplate) {
+        viewModelScope.launch {
+            try {
+                val result = workoutRepository.updateWorkoutTemplate(template)
+                if (result.isSuccess) {
+                    Log.d(TAG, "Updated workout template: ${template.name}")
+                    // Reload templates
+                    loadWorkoutTemplates(template.userId)
+                } else {
+                    Log.e(TAG, "Failed to update workout template: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating workout template", e)
+            }
+        }
+    }
+
+    /**
+     * Usuwa szablon treningu
+     */
+    fun deleteWorkoutTemplate(templateId: String) {
+        viewModelScope.launch {
+            try {
+                val result = workoutRepository.deleteWorkoutTemplate(templateId)
+                if (result.isSuccess) {
+                    Log.d(TAG, "Deleted workout template: $templateId")
+                    // Reload templates
+                    loadWorkoutTemplates(_currentUserId.value)
+                } else {
+                    Log.e(TAG, "Failed to delete workout template: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting workout template", e)
+            }
+        }
+    }
+
+    /**
+     * Tworzy szablon treningowy na podstawie aktualnego treningu
+     */
+    fun createTemplateFromWorkout(workout: CompletedWorkout) {
+        viewModelScope.launch {
+            try {
+                // Convert CompletedWorkout to WorkoutTemplate with full exercise information
+                val template = WorkoutTemplate(
+                    id = "",
+                    userId = workout.userId,
+                    name = "${workout.name} (Template)",
+                    description = "",
+                    categoryId = workout.categoryId,
+                    exercises = workout.exercises // Zachowujemy pełne informacje o ćwiczeniach
+                )
+
+                // Create the template
+                val result = workoutRepository.createWorkoutTemplate(template)
+                if (result.isSuccess) {
+                    Log.d(TAG, "Created template from workout: ${template.name}")
+                    // Reload templates
+                    loadWorkoutTemplates(template.userId)
+                } else {
+                    Log.e(TAG, "Failed to create template from workout: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating template from workout", e)
+            }
+        }
+    }
+
+    /**
+     * Rozpoczyna trening na podstawie szablonu
+     */
+    fun startWorkoutFromTemplate(template: WorkoutTemplate) {
+        viewModelScope.launch {
+            try {
+                // Sprawdź, czy użytkownik nie ma już aktywnego treningu
+                if (_activeWorkout.value != null) {
+                    // W prostszej wersji możemy po prostu pokazać istniejący trening
+                    showWorkoutRecorder(true)
+                    return@launch
+                }
+
+                // Utwórz nowy trening na podstawie szablonu
+                // Używamy bezpośrednio listy ćwiczeń z szablonu, która zawiera wszystkie szczegóły
+                val newWorkout = CompletedWorkout(
+                    id = UUID.randomUUID().toString(),
+                    userId = _currentUserId.value,
+                    name = template.name,
+                    templateId = template.id,
+                    categoryId = template.categoryId,
+                    startTime = Timestamp.now(),
+                    exercises = template.exercises // Bezpośrednio używamy ćwiczeń z szablonu
+                )
+
+                // Zapisz trening w repozytorium
+                val result = workoutRepository.startWorkout(newWorkout)
+                if (result.isSuccess) {
+                    val savedWorkout = result.getOrNull()
+                    if (savedWorkout != null) {
+                        _activeWorkout.value = savedWorkout
+                        Log.d(TAG, "Started workout from template: ${template.name}")
+
+                        // Uruchom śledzenie czasu treningu
+                        startWorkoutTimeTracking()
+
+                        // Pokaż rejestrację treningu
+                        showWorkoutRecorder(true)
+                    }
+                } else {
+                    Log.e(TAG, "Failed to start workout from template: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting workout from template", e)
+            }
         }
     }
 

@@ -98,7 +98,7 @@ fun TrainingRecorderBottomSheet(
     var showCategoryPicker by remember { mutableStateOf(false) }
     var selectedCategoryId by remember(workout.categoryId) { mutableStateOf(workout.categoryId) }
 
-// Pobierz kategorie z ViewModel
+    // Pobierz kategorie z ViewModel
     val categories by workoutViewModel.categories.collectAsState(initial = emptyList())
     val selectedCategory = remember(selectedCategoryId, categories) {
         categories.find { it.id == selectedCategoryId }
@@ -128,10 +128,11 @@ fun TrainingRecorderBottomSheet(
     }
 
     // Local copy of the workout for editing - remember both workout and exercises changes
-    val currentWorkout = remember(workout, exercises, workoutName) {
+    val currentWorkout = remember(workout, exercises, workoutName, selectedCategoryId) {
         workout.copy(
             name = workoutName,
-            exercises = exercises.toList()
+            exercises = exercises.toList(),
+            categoryId = selectedCategoryId
         )
     }
 
@@ -174,7 +175,7 @@ fun TrainingRecorderBottomSheet(
         workoutViewModel.loadPreviousSetsData(workout.userId)
     }
 
-
+    // Dialogi
     if (showCancelConfirmation) {
         AlertDialog(
             onDismissRequest = { showCancelConfirmation = false },
@@ -234,14 +235,14 @@ fun TrainingRecorderBottomSheet(
         )
     }
 
-
     ModalBottomSheet(
         onDismissRequest = {
             // Update workout in ViewModel before dismissing
-            if (exercises.isNotEmpty() && (workout.exercises != exercises || workout.name != workoutName)) {
+            if (exercises.isNotEmpty() && (workout.exercises != exercises || workout.name != workoutName || workout.categoryId != selectedCategoryId)) {
                 val updatedWorkout = workout.copy(
                     name = workoutName,
-                    exercises = exercises.toList()
+                    exercises = exercises.toList(),
+                    categoryId = selectedCategoryId
                 )
                 workoutViewModel.updateWorkout(updatedWorkout)
             }
@@ -275,8 +276,9 @@ fun TrainingRecorderBottomSheet(
                         val updatedWorkout = workout.copy(
                             name = workoutName,
                             exercises = exercises.toList(),
+                            categoryId = selectedCategoryId,
                             endTime = com.google.firebase.Timestamp.now(),
-                            duration = ((System.currentTimeMillis() - workout.startTime.toDate().time) / 60000) // Convert to minutes
+                            duration = ((System.currentTimeMillis() - workout.startTime.toDate().time) / 1000) // Convert to seconds
                         )
                         onWorkoutFinish(updatedWorkout)
                     },
@@ -361,7 +363,7 @@ fun TrainingRecorderBottomSheet(
                 }
             }
 
-// Dialog wyboru kategorii
+            // Dialog wyboru kategorii
             if (showCategoryPicker) {
                 CategoryPickerDialog(
                     categories = categories,
@@ -497,7 +499,6 @@ fun TrainingRecorderBottomSheet(
         )
     }
 }
-
 
 @Composable
 fun EmptyWorkoutState() {
