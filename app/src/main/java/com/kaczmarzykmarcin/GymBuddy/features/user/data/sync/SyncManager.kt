@@ -94,21 +94,6 @@ class SyncManager @Inject constructor(
         }
     }
 
-    private suspend fun syncWorkoutCategories() {
-        val workoutCategoriesToSync = workoutCategoryDao.getWorkoutCategoriesToSync()
-
-        for (workoutCategoryEntity in workoutCategoriesToSync) {
-            try {
-                val workoutCategoryModel = mappers.toModel(workoutCategoryEntity)
-                remoteDataSource.updateWorkoutCategory(workoutCategoryModel)
-
-                // Oznacz jako zsynchronizowane
-                workoutCategoryDao.updateWorkoutCategory(workoutCategoryEntity.copy(needsSync = false, lastSyncTime = System.currentTimeMillis()))
-            } catch (e: Exception) {
-                Log.e(TAG, "Error syncing workout category: ${workoutCategoryEntity.id}", e)
-            }
-        }
-    }
     /**
      * Synchronizuje dane między lokalną a zdalną bazą danych
      */
@@ -142,7 +127,7 @@ class SyncManager @Inject constructor(
             // Synchronizacja historii treningów
             syncCompletedWorkouts()
 
-            // Synchronizacja kategorii
+            // Synchronizacja kategorii - dwukierunkowa
             syncWorkoutCategories()
 
             _lastSyncTime.value = System.currentTimeMillis()
@@ -287,7 +272,164 @@ class SyncManager @Inject constructor(
                 Log.e(TAG, "Error syncing completed workout: ${completedWorkoutEntity.id}", e)
             }
         }
+    }
 
+    /**
+     * Synchronizuje kategorie treningowe - dwukierunkowa synchronizacja
+     */
+    private suspend fun syncWorkoutCategories() {
+        try {
+            // 1. Wyślij lokalne zmiany do serwera
+            val categoriesToSync = workoutCategoryDao.getWorkoutCategoriesToSync()
+
+            for (categoryEntity in categoriesToSync) {
+                try {
+                    val categoryModel = mappers.toModel(categoryEntity)
+
+                    // Sprawdź czy kategoria istnieje na serwerze
+                    val existingResult = remoteDataSource.getWorkoutCategory(categoryModel.id)
+
+                    val result = if (existingResult.isSuccess) {
+                        // Aktualizuj istniejącą
+                        remoteDataSource.updateWorkoutCategory(categoryModel)
+                    } else {
+                        // Utwórz nową
+                        remoteDataSource.createWorkoutCategory(categoryModel)
+                    }
+
+                    if (result.isSuccess) {
+                        // Oznacz jako zsynchronizowane
+                        workoutCategoryDao.updateWorkoutCategory(
+                            categoryEntity.copy(needsSync = false, lastSyncTime = System.currentTimeMillis())
+                        )
+                        Log.d(TAG, "Successfully synced category: ${categoryModel.name}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error syncing workout category: ${categoryEntity.id}", e)
+                }
+            }
+
+            // 2. Pobierz kategorie z serwera
+            // Pobierz ID aktualnie zalogowanego użytkownika
+            val currentUserId = getCurrentUserId()
+            if (currentUserId != null) {
+                val remoteCategories = remoteDataSource.getUserWorkoutCategories(currentUserId)
+
+                if (remoteCategories.isSuccess) {
+                    remoteCategories.getOrNull()?.forEach { remoteCategory ->
+                        try {
+                            // Sprawdź czy kategoria istnieje lokalnie
+                            val localCategory = workoutCategoryDao.getWorkoutCategoryById(remoteCategory.id)
+
+                            if (localCategory == null) {
+                                // Dodaj nową kategorię z serwera
+                                val entity = mappers.toEntity(remoteCategory, needsSync = false)
+                                workoutCategoryDao.insertWorkoutCategory(entity)
+                                Log.d(TAG, "Added new category from server: ${remoteCategory.name}")
+                            } else if (!localCategory.needsSync &&
+                                localCategory.lastSyncTime < remoteCategory.createdAt.seconds * 1000) {
+                                // Aktualizuj lokalną kategorię jeśli zdalna jest nowsza i lokalna nie ma zmian
+                                val entity = mappers.toEntity(remoteCategory, needsSync = false)
+                                workoutCategoryDao.updateWorkoutCategory(entity)
+                                Log.d(TAG, "Updated category from server: ${remoteCategory.name}")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing remote category: ${remoteCategory.id}", e)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during workout categories sync", e)
+        }
+    }
+
+    /**
+     * Pobiera ID aktualnie zalogowanego użytkownika
+     */
+    private suspend fun getCurrentUserId(): String? {
+        return try {
+            // Najpierw spróbuj pobrać z lokalnej bazy
+            val users = userDao.getUsersToSync()
+            if (users.isNotEmpty()) {
+                return users.first().id
+            }
+
+            // Jeśli nie ma w lokalnej bazie, pobierz pierwszy użytkownik
+            // W rzeczywistej aplikacji powinieneś mieć lepszy sposób na przechowywanie aktualnego użytkownika
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting current user ID", e)
+            null
+        }
+    }
+
+    /**
+     * Wymusza pełną synchronizację danych użytkownika
+     */
+    suspend fun forceFullSync(userId: String) {
+        if (!networkManager.isInternetAvailable()) {
+            Log.w(TAG, "No internet connection for full sync")
+            return
+        }
+
+        try {
+            Log.d(TAG, "Starting forced full sync for user: $userId")
+
+            // Pobierz wszystkie dane z serwera
+            val userDataResult = remoteDataSource.getFullUserData(userId)
+
+            if (userDataResult.isSuccess) {
+                val userData = userDataResult.getOrNull()!!
+
+                // Zapisz dane lokalnie
+                userDao.insertUser(mappers.toEntity(userData.user))
+                userAuthDao.insertUserAuth(mappers.toEntity(userData.auth))
+                userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
+                userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
+
+                // Zapisz osiągnięcia
+                userData.achievements.forEach { achievement ->
+                    userAchievementDao.insertUserAchievement(mappers.toEntity(achievement))
+                }
+            }
+
+            // Pobierz i zapisz szablony treningów
+            val templatesResult = remoteDataSource.getUserWorkoutTemplates(userId)
+            if (templatesResult.isSuccess) {
+                templatesResult.getOrNull()?.forEach { template ->
+                    workoutTemplateDao.insertWorkoutTemplate(mappers.toEntity(template))
+                }
+            }
+
+            // Pobierz i zapisz historię treningów
+            val workoutsResult = remoteDataSource.getUserWorkoutHistory(userId)
+            if (workoutsResult.isSuccess) {
+                workoutsResult.getOrNull()?.forEach { workout ->
+                    workoutDao.insertCompletedWorkout(mappers.toEntity(workout))
+                }
+            }
+
+            // Pobierz i zapisz kategorie treningowe
+            val categoriesResult = remoteDataSource.getUserWorkoutCategories(userId)
+            if (categoriesResult.isSuccess) {
+                categoriesResult.getOrNull()?.forEach { category ->
+                    // Sprawdź czy kategoria już istnieje lokalnie
+                    val existingCategory = workoutCategoryDao.getWorkoutCategoryById(category.id)
+                    val entity = mappers.toEntity(category, needsSync = false)
+
+                    if (existingCategory == null) {
+                        workoutCategoryDao.insertWorkoutCategory(entity)
+                    } else {
+                        workoutCategoryDao.updateWorkoutCategory(entity)
+                    }
+                }
+            }
+
+            Log.d(TAG, "Forced full sync completed successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during forced full sync", e)
+        }
     }
 
     companion object {

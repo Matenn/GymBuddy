@@ -172,5 +172,11 @@
     <string name="start_workout_with_template">Start workout with template</string>
     <string name="add_exercises_to_template">Add exercises to template</string>
 
+    <!-- Search related strings -->
+    <string name="search_templates">Szukaj szablonów...</string>
+    <string name="no_templates_found">Nie znaleziono szablonów</string>
+    <string name="active_workout_in_progress">You have active workout already</string>
+    <string name="resume_current_workout">Resume current workout</string>
+
 
 </resources>

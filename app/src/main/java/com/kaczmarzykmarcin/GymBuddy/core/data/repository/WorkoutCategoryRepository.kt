@@ -31,14 +31,17 @@ class WorkoutCategoryRepository @Inject constructor(
     suspend fun initializeDefaultCategories(userId: String) {
         try {
             // Sprawdź czy istnieją już domyślne kategorie
-            val categories = workoutCategoryDao.getWorkoutCategoriesByUserId(userId).collect { entities ->
-                if (entities.none { it.isDefault }) {
-                    // Jeśli nie ma domyślnych kategorii, dodaj je
-                    val defaultEntities = WorkoutCategory.PREDEFINED_CATEGORIES.map { category ->
-                        mappers.toEntity(category.copy(userId = userId))
-                    }
-                    workoutCategoryDao.insertWorkoutCategories(defaultEntities)
+            val categories = workoutCategoryDao.getWorkoutCategoriesByUserId(userId).first()
+
+            if (categories.none { it.isDefault }) {
+                // Jeśli nie ma domyślnych kategorii, dodaj je
+                val defaultEntities = WorkoutCategory.PREDEFINED_CATEGORIES.map { category ->
+                    mappers.toEntity(category.copy(userId = userId), needsSync = true)
                 }
+                workoutCategoryDao.insertWorkoutCategories(defaultEntities)
+
+                // Uruchom synchronizację w tle
+                syncManager.requestSync()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize default categories", e)
@@ -66,8 +69,18 @@ class WorkoutCategoryRepository @Inject constructor(
                 return Result.success(mappers.toModel(categoryEntity))
             }
 
-            // Jeśli nie ma danych lokalnie, zwróć błąd
-            // (Zakładamy, że RemoteUserDataSource nie ma jeszcze metody getWorkoutCategory)
+            // Jeśli nie ma danych lokalnie i jest połączenie, spróbuj pobrać z serwera
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.getWorkoutCategory(categoryId)
+                if (remoteResult.isSuccess) {
+                    val remoteCategory = remoteResult.getOrNull()!!
+                    // Zapisz lokalnie
+                    val entity = mappers.toEntity(remoteCategory, needsSync = false)
+                    workoutCategoryDao.insertWorkoutCategory(entity)
+                    return Result.success(remoteCategory)
+                }
+            }
+
             Result.failure(Exception("Category not found: $categoryId"))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get workout category", e)
@@ -87,11 +100,23 @@ class WorkoutCategoryRepository @Inject constructor(
                 category
             }
 
-            // Zapisz lokalnie
-            val entity = mappers.toEntity(categoryWithId, true)
+            // Zapisz lokalnie z flagą needsSync = true
+            val entity = mappers.toEntity(categoryWithId, needsSync = true)
             workoutCategoryDao.insertWorkoutCategory(entity)
 
-            // Uruchom synchronizację w tle
+            // Jeśli jest połączenie internetowe, wyślij od razu na serwer
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.createWorkoutCategory(categoryWithId)
+                if (remoteResult.isSuccess) {
+                    // Zaktualizuj lokalną encję - usuń flagę needsSync
+                    workoutCategoryDao.updateWorkoutCategory(entity.copy(needsSync = false))
+                } else {
+                    // Jeśli nie udało się wysłać, zachowaj flagę needsSync
+                    Log.w(TAG, "Failed to sync category to remote, will retry later")
+                }
+            }
+
+            // Uruchom synchronizację w tle (na wypadek gdyby nie było połączenia)
             syncManager.requestSync()
 
             Result.success(categoryWithId)
@@ -106,9 +131,20 @@ class WorkoutCategoryRepository @Inject constructor(
      */
     suspend fun updateWorkoutCategory(category: WorkoutCategory): Result<WorkoutCategory> {
         return try {
-            // Zapisz lokalnie
-            val entity = mappers.toEntity(category, true)
+            // Zapisz lokalnie z flagą needsSync = true
+            val entity = mappers.toEntity(category, needsSync = true)
             workoutCategoryDao.updateWorkoutCategory(entity)
+
+            // Jeśli jest połączenie internetowe, wyślij od razu na serwer
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.updateWorkoutCategory(category)
+                if (remoteResult.isSuccess) {
+                    // Zaktualizuj lokalną encję - usuń flagę needsSync
+                    workoutCategoryDao.updateWorkoutCategory(entity.copy(needsSync = false))
+                } else {
+                    Log.w(TAG, "Failed to sync category update to remote, will retry later")
+                }
+            }
 
             // Uruchom synchronizację w tle
             syncManager.requestSync()
@@ -128,7 +164,15 @@ class WorkoutCategoryRepository @Inject constructor(
             // Usuń lokalnie
             workoutCategoryDao.deleteWorkoutCategory(categoryId)
 
-            // Uruchom synchronizację w tle (jeśli potrzeba)
+            // Jeśli jest połączenie internetowe, usuń też z serwera
+            if (networkManager.isInternetAvailable()) {
+                val remoteResult = remoteDataSource.deleteWorkoutCategory(categoryId)
+                if (remoteResult.isFailure) {
+                    Log.w(TAG, "Failed to delete category from remote")
+                }
+            }
+
+            // Uruchom synchronizację w tle
             syncManager.requestSync()
 
             Result.success(Unit)
@@ -139,13 +183,48 @@ class WorkoutCategoryRepository @Inject constructor(
     }
 
     /**
-     * Synchronizuje kategorie treningowe z serwerem (tymczasowa implementacja)
+     * Synchronizuje kategorie treningowe z serwerem
      */
     suspend fun syncWorkoutCategories(userId: String): Result<List<WorkoutCategory>> {
         return try {
-            // Pobierz lokalne kategorie
-            val categories = getUserWorkoutCategories(userId).map { it }.first()
-            Result.success(categories)
+            if (!networkManager.isInternetAvailable()) {
+                // Jeśli nie ma połączenia, zwróć lokalne dane
+                val categories = getUserWorkoutCategories(userId).first()
+                return Result.success(categories)
+            }
+
+            // Pobierz kategorie z serwera
+            val remoteResult = remoteDataSource.getUserWorkoutCategories(userId)
+
+            if (remoteResult.isSuccess) {
+                val remoteCategories = remoteResult.getOrNull()!!
+
+                // Pobierz lokalne kategorie
+                val localCategories = workoutCategoryDao.getWorkoutCategoriesByUserId(userId).first()
+
+                // Synchronizuj kategorie
+                remoteCategories.forEach { remoteCategory ->
+                    val localCategory = localCategories.find { it.id == remoteCategory.id }
+
+                    if (localCategory == null) {
+                        // Dodaj nową kategorię z serwera
+                        val entity = mappers.toEntity(remoteCategory, needsSync = false)
+                        workoutCategoryDao.insertWorkoutCategory(entity)
+                    } else if (localCategory.lastSyncTime < remoteCategory.createdAt.seconds * 1000) {
+                        // Aktualizuj lokalną kategorię jeśli zdalna jest nowsza
+                        val entity = mappers.toEntity(remoteCategory, needsSync = false)
+                        workoutCategoryDao.updateWorkoutCategory(entity)
+                    }
+                }
+
+                // Zwróć zaktualizowaną listę kategorii
+                val updatedCategories = getUserWorkoutCategories(userId).first()
+                Result.success(updatedCategories)
+            } else {
+                // Jeśli nie udało się pobrać z serwera, zwróć lokalne dane
+                val categories = getUserWorkoutCategories(userId).first()
+                Result.success(categories)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync workout categories", e)
             Result.failure(e)

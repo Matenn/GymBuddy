@@ -76,10 +76,8 @@ import com.kaczmarzykmarcin.GymBuddy.data.model.ExerciseSet
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.ExerciseSelectionBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-
-
-
-
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.Black
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +95,10 @@ fun WorkoutTemplateBottomSheet(
     )
     val scope = rememberCoroutineScope()
 
+    // Obserwuj aktywny trening
+    val activeWorkout by workoutViewModel.activeWorkout.collectAsState()
+
+
     // Stany dla edycji szablonu
     var isEditMode by remember { mutableStateOf(isEditing || template == null) }
     var showExerciseSelection by remember { mutableStateOf(false) }
@@ -104,6 +106,9 @@ fun WorkoutTemplateBottomSheet(
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showNameEditDialog by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
+
+    // Stan kontrolujący czy sheet ma być widoczny
+    var isSheetVisible by remember { mutableStateOf(true) }
 
     // Podstawowe dane szablonu
     val currentUserId by workoutViewModel.currentUserId.collectAsState()
@@ -122,6 +127,38 @@ fun WorkoutTemplateBottomSheet(
 
     // Ćwiczenia w szablonie z zachowaniem wszystkich informacji o seriach
     val exercises = remember(template?.id) { mutableStateListOf<CompletedExercise>() }
+
+    // Funkcja sprawdzająca czy są zmiany
+    fun hasChanges(): Boolean {
+        val originalName = template?.name ?: ""
+        val originalCategoryId = template?.categoryId
+        val originalExercises = template?.exercises ?: emptyList()
+
+        return templateName != originalName ||
+                selectedCategoryId != originalCategoryId ||
+                exercises.size != originalExercises.size ||
+                !exercises.zip(originalExercises).all { (current, original) ->
+                    current.exerciseId == original.exerciseId &&
+                            current.name == original.name &&
+                            current.category == original.category &&
+                            current.sets.size == original.sets.size &&
+                            current.sets.zip(original.sets).all { (currentSet, originalSet) ->
+                                currentSet.setType == originalSet.setType &&
+                                        currentSet.weight == originalSet.weight &&
+                                        currentSet.reps == originalSet.reps
+                            }
+                }
+    }
+
+    // Funkcja resetująca do oryginalnych wartości
+    fun resetToOriginal() {
+        templateName = template?.name ?: ""
+        selectedCategoryId = template?.categoryId
+        exercises.clear()
+        if (template != null) {
+            exercises.addAll(template.exercises)
+        }
+    }
 
     // Załaduj ćwiczenia dla szablonu
     LaunchedEffect(template, availableExercises) {
@@ -186,29 +223,42 @@ fun WorkoutTemplateBottomSheet(
     // Dialog potwierdzenia odrzucenia zmian
     if (showDiscardChangesDialog) {
         AlertDialog(
-            onDismissRequest = { showDiscardChangesDialog = false },
+            onDismissRequest = {
+                showDiscardChangesDialog = false
+                // Przywróć widoczność sheet, jeśli dialog został zamknięty bez wyboru
+                if (!isSheetVisible) {
+                    isSheetVisible = true
+                }
+            },
             title = { Text(stringResource(R.string.discard_changes)) },
             text = { Text(stringResource(R.string.discard_changes_confirmation)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDiscardChangesDialog = false
-                    isEditMode = false
-
-                    // Reset to original values
-                    templateName = template?.name ?: ""
-                    selectedCategoryId = template?.categoryId
-
-                    // Przywróć oryginalne ćwiczenia
-                    exercises.clear()
-                    if (template != null) {
-                        exercises.addAll(template.exercises)
+                    if (isEditMode) {
+                        // W trybie edycji - przywróć oryginalne wartości i wyjdź z trybu edycji
+                        isEditMode = false
+                        resetToOriginal()
+                        if (!isSheetVisible) {
+                            // Jeśli sheet był ukryty, zamknij go całkowicie
+                            onDismiss()
+                        }
+                    } else {
+                        // Nie w trybie edycji - po prostu zamknij
+                        onDismiss()
                     }
                 }) {
                     Text(stringResource(R.string.confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardChangesDialog = false }) {
+                TextButton(onClick = {
+                    showDiscardChangesDialog = false
+                    // Przywróć widoczność sheet, aby użytkownik mógł kontynuować edycję
+                    if (!isSheetVisible) {
+                        isSheetVisible = true
+                    }
+                }) {
                     Text(stringResource(R.string.cancel))
                 }
             }
@@ -240,345 +290,381 @@ fun WorkoutTemplateBottomSheet(
         )
     }
 
-    ModalBottomSheet(
-        onDismissRequest = {
-            if (isEditMode &&
-                (templateName != template?.name ||
-                        selectedCategoryId != template.categoryId ||
-                        exercises != template.exercises)) {
-                showDiscardChangesDialog = true
-            } else {
-                onDismiss()
-            }
-        },
-        sheetState = sheetState,
-        containerColor = Color.White,
-        modifier = Modifier.padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
+    // Pokazuj sheet tylko gdy isSheetVisible jest true
+    if (isSheetVisible) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (isEditMode && hasChanges()) {
+                    // Ukryj sheet i pokaż dialog
+                    isSheetVisible = false
+                    showDiscardChangesDialog = true
+                } else {
+                    onDismiss()
+                }
+            },
+            sheetState = sheetState,
+            containerColor = Color.White,
+            modifier = Modifier.padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
         ) {
-            // Top controls - przyciski
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Close/Cancel button
-                Box(
-                    modifier = Modifier.width(48.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    if (isEditMode) {
-                        IconButton(onClick = {
-                            if (templateName != template?.name ||
-                                selectedCategoryId != template.categoryId ||
-                                exercises != template?.exercises) {
-                                showDiscardChangesDialog = true
-                            } else {
-                                isEditMode = false
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.cancel)
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = { onDismiss() }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = stringResource(R.string.close)
-                            )
-                        }
-                    }
-                }
-
-                // Tytuł w środku
-                Text(
-                    text = if (template == null)
-                        stringResource(R.string.new_template)
-                    else
-                        stringResource(R.string.template_details),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center
-                )
-
-                // Edit/Save button
-                Box(
-                    modifier = Modifier.width(80.dp),
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    if (isEditMode) {
-                        Button(
-                            onClick = {
-                                // Zapisz zmiany w szablonie ze wszystkimi informacjami o ćwiczeniach
-                                val updatedTemplate = WorkoutTemplate(
-                                    id = template?.id ?: "",
-                                    userId = template?.userId ?: currentUserId,
-                                    name = templateName,
-                                    description = "",
-                                    categoryId = selectedCategoryId,
-                                    exercises = exercises.toList()  // Zapisz pełne obiekty CompletedExercise
-                                )
-                                // Save changes
-                                onTemplateSave(updatedTemplate)
-                                isEditMode = false
-                            },
-                            shape = RoundedCornerShape(24.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.Black
-                            )
-                        ) {
-                            Text(stringResource(R.string.save))
-                        }
-
-                    } else {
-                        Button(
-                            onClick = { isEditMode = true },
-                            shape = RoundedCornerShape(24.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.Black
-                            )
-                        ) {
-                            Text(stringResource(R.string.edit))
-                        }
-                    }
-                }
-            }
-
-            // W trybie edycji, dodaj wiersz do wyboru kategorii
-            if (isEditMode) {
+                // Top controls - przyciski
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(R.string.workout_category),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-
-                    // Przycisk wyboru kategorii
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(24.dp))
-                            .clickable { showCategoryPicker = true }
-                            .border(
-                                width = 1.dp,
-                                color = selectedCategory?.let {
-                                    Color(android.graphics.Color.parseColor(it.color))
-                                } ?: Color.Gray,
-                                shape = RoundedCornerShape(24.dp)
-                            )
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    // Close/Cancel button
+                    Box(
+                        modifier = Modifier.width(48.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            selectedCategory?.let {
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(android.graphics.Color.parseColor(it.color)))
+                        if (isEditMode) {
+                            IconButton(onClick = {
+                                if (hasChanges()) {
+                                    showDiscardChangesDialog = true
+                                } else {
+                                    isEditMode = false
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.cancel)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(it.name)
-                            } ?: Text(
-                                text = stringResource(R.string.select_category),
-                                color = Color.Gray
-                            )
-                        }
-                    }
-                }
-
-                // Dialog wyboru kategorii w trybie edycji
-                if (showCategoryPicker) {
-                    CategoryPickerDialog(
-                        categories = categories,
-                        selectedCategoryId = selectedCategoryId,
-                        onCategorySelected = { categoryId ->
-                            selectedCategoryId = categoryId
-                            showCategoryPicker = false
-                        },
-                        onDismissRequest = { showCategoryPicker = false },
-                        navController = navController
-                    )
-                }
-            }
-            // W trybie podglądu, tylko wyświetl kategorię (jeśli istnieje)
-            else {
-                template?.categoryId?.let { catId ->
-                    val category = categories.find { it.id == catId }
-
-                    category?.let {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = stringResource(R.string.workout_category) + ":",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
-                            )
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Etykieta kategorii
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = Color(android.graphics.Color.parseColor(category.color)),
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = category.name,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Medium
+                            }
+                        } else {
+                            IconButton(onClick = { onDismiss() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.close)
                                 )
                             }
                         }
                     }
-                }
-            }
 
-            // Nazwa szablonu z przyciskiem edycji (tylko w trybie edycji)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = templateName,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isEditMode) {
-                    IconButton(onClick = { showNameEditDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = stringResource(R.string.edit_template_name)
-                        )
-                    }
-                }
-            }
+                    // Tytuł w środku
+                    Text(
+                        text = if (template == null)
+                            stringResource(R.string.new_template)
+                        else
+                            stringResource(R.string.template_details),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center
+                    )
 
-            Divider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp))
-
-            // Main content (exercise list)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                if (exercises.isEmpty()) {
-                    // Empty state
-                    EmptyTemplateState()
-                } else {
-                    // List of exercises
-                    exercises.forEachIndexed { index, exercise ->
+                    // Edit/Save button
+                    Box(
+                        modifier = Modifier.width(80.dp),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
                         if (isEditMode) {
-                            // W trybie edycji używamy ExerciseItemWorkout z TrainingRecorderBottomSheet
-                            ExerciseItemWorkout(
-                                exercise = exercise,
-                                userId = currentUserId,
-                                onExerciseUpdated = { updatedExercise ->
-                                    exercises[index] = updatedExercise
-                                },
-                                onExerciseDeleted = {
-                                    exercises.removeAt(index)
-                                }
-                            )
-                        } else {
-                            // W trybie podglądu używamy ReadOnlyTemplateExerciseItem
-                            ReadOnlyTemplateExerciseItem(exercise = exercise)
-                        }
+                            Button(
+                                onClick = {
+                                    // Zapisz zmiany w szablonie ze wszystkimi informacjami o ćwiczeniach
+                                    val updatedTemplate = WorkoutTemplate(
+                                        id = template?.id ?: "",
+                                        userId = template?.userId ?: currentUserId,
+                                        name = templateName,
+                                        description = "",
+                                        categoryId = selectedCategoryId,
+                                        exercises = exercises.toList()  // Zapisz pełne obiekty CompletedExercise
+                                    )
+                                    // Save changes
+                                    onTemplateSave(updatedTemplate)
 
-                        if (index < exercises.size - 1) {
-                            Divider(modifier = Modifier.padding(vertical = 16.dp))
+                                    // Odśwież kategorie po zapisaniu
+                                    workoutViewModel.loadCategories()
+
+                                    isEditMode = false
+                                },
+                                shape = RoundedCornerShape(24.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Black
+                                )
+                            ) {
+                                Text(stringResource(R.string.save))
+                            }
+
+                        } else {
+                            Button(
+                                onClick = { isEditMode = true },
+                                shape = RoundedCornerShape(24.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Black
+                                )
+                            ) {
+                                Text(stringResource(R.string.edit))
+                            }
                         }
                     }
                 }
 
-                // Extra space at bottom
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Bottom buttons (zależne od trybu)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
+                // W trybie edycji, dodaj wiersz do wyboru kategorii
                 if (isEditMode) {
-                    // Add exercise button
-                    Button(
-                        onClick = { showExerciseSelection = true },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(28.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Black
-                        )
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = stringResource(R.string.add_exercise))
+                        Text(
+                            text = stringResource(R.string.workout_category),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+
+                        // Przycisk wyboru kategorii
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(24.dp))
+                                .clickable { showCategoryPicker = true }
+                                .border(
+                                    width = 1.dp,
+                                    color = selectedCategory?.let {
+                                        Color(android.graphics.Color.parseColor(it.color))
+                                    } ?: Color.Gray,
+                                    shape = RoundedCornerShape(24.dp)
+                                )
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                selectedCategory?.let {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(android.graphics.Color.parseColor(it.color)))
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(it.name)
+                                } ?: Text(
+                                    text = stringResource(R.string.select_category),
+                                    color = Color.Gray
+                                )
+                            }
+                        }
                     }
 
-                    // Delete template button (tylko jeśli szablon już istnieje)
-                    if (template != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                    // Dialog wyboru kategorii w trybie edycji
+                    if (showCategoryPicker) {
+                        CategoryPickerDialog(
+                            categories = categories,
+                            selectedCategoryId = selectedCategoryId,
+                            onCategorySelected = { categoryId ->
+                                selectedCategoryId = categoryId
+                                showCategoryPicker = false
+                            },
+                            onDismissRequest = { showCategoryPicker = false },
+                            navController = navController
+                        )
+                    }
+                }
+                // W trybie podglądu, tylko wyświetl kategorię (jeśli istnieje)
+                else {
+                    selectedCategoryId?.let { catId ->
+                        val category = categories.find { it.id == catId }
 
+                        category?.let {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.workout_category) + ":",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.Gray
+                                )
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                // Etykieta kategorii
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = Color(android.graphics.Color.parseColor(category.color)),
+                                            shape = RoundedCornerShape(16.dp)
+                                        )
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = category.name,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Nazwa szablonu z przyciskiem edycji (tylko w trybie edycji)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = templateName,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (isEditMode) {
+                        IconButton(onClick = { showNameEditDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = stringResource(R.string.edit_template_name)
+                            )
+                        }
+                    }
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp))
+
+                // Main content (exercise list)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (exercises.isEmpty()) {
+                        // Empty state
+                        EmptyTemplateState()
+                    } else {
+                        // List of exercises
+                        exercises.forEachIndexed { index, exercise ->
+                            if (isEditMode) {
+                                // W trybie edycji używamy ExerciseItemWorkout z TrainingRecorderBottomSheet
+                                ExerciseItemWorkout(
+                                    exercise = exercise,
+                                    userId = currentUserId,
+                                    onExerciseUpdated = { updatedExercise ->
+                                        exercises[index] = updatedExercise
+                                    },
+                                    onExerciseDeleted = {
+                                        exercises.removeAt(index)
+                                    }
+                                )
+                            } else {
+                                // W trybie podglądu używamy ReadOnlyTemplateExerciseItem
+                                ReadOnlyTemplateExerciseItem(exercise = exercise)
+                            }
+
+                            if (index < exercises.size - 1) {
+                                Divider(modifier = Modifier.padding(vertical = 16.dp))
+                            }
+                        }
+                    }
+
+                    // Extra space at bottom
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // Bottom buttons (zależne od trybu)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    if (isEditMode) {
+                        // Add exercise button
                         Button(
-                            onClick = { showDeleteConfirmation = true },
+                            onClick = { showExerciseSelection = true },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
                             shape = RoundedCornerShape(28.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFEFF1F5),
-                                contentColor = Color.Red
+                                containerColor = Color.Black
                             )
                         ) {
-                            Text(text = stringResource(R.string.delete_template))
+                            Text(text = stringResource(R.string.add_exercise))
                         }
-                    }
-                } else {
-                    // Start workout with template button
-                    Button(
-                        onClick = {
-                            template?.let {
-                                workoutViewModel.startWorkoutFromTemplate(it)
-                                onDismiss()
+
+                        // Delete template button (tylko jeśli szablon już istnieje)
+                        if (template != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = { showDeleteConfirmation = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                shape = RoundedCornerShape(28.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEFF1F5),
+                                    contentColor = Color.Red
+                                )
+                            ) {
+                                Text(text = stringResource(R.string.delete_template))
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(28.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Black
-                        )
-                    ) {
-                        Text(text = stringResource(R.string.start_workout_with_template))
-                    }
-                }
+                        }
+                    } else {
+                        // Start workout with template button - tylko jeśli nie ma aktywnego treningu
+                        if (activeWorkout == null) {
+                            Button(
+                                onClick = {
+                                    template?.let {
+                                        workoutViewModel.startWorkoutFromTemplate(it)
+                                        onDismiss()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                shape = RoundedCornerShape(28.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.Black
+                                )
+                            ) {
+                                Text(text = stringResource(R.string.start_workout_with_template))
+                            }
+                        } else {
+                            // Wyświetl informację o aktywnym treningu
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.active_workout_in_progress),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+
+                                Button(
+                                    onClick = {
+                                        // Pokaż aktywny trening zamiast tworzyć nowy
+                                        workoutViewModel.showWorkoutRecorder(true)
+                                        onDismiss()
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp),
+                                    shape = RoundedCornerShape(28.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Black // Zielony kolor dla "Resume"
+                                    )
+                                ) {
+                                    Text(text = stringResource(R.string.resume_current_workout))
+                                }
+                            }
+                        }
+                    }}
             }
         }
     }

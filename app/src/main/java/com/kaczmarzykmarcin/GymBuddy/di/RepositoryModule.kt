@@ -134,13 +134,16 @@ object RepositoryModule {
         userProfileDao: UserProfileDao,
         userStatsDao: UserStatsDao,
         userAchievementDao: UserAchievementDao,
+        workoutCategoryDao: WorkoutCategoryDao, // Dodane
         syncManager: SyncManager,
         mappers: UserMappers,
-        workoutRepository: WorkoutRepository
+        workoutRepository: WorkoutRepository,
+        workoutCategoryRepository: WorkoutCategoryRepository // Dodane
     ): UserRepository {
         return UserRepository(
             auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
-            userStatsDao, userAchievementDao, syncManager, mappers, workoutRepository
+            userStatsDao, userAchievementDao, workoutCategoryDao, syncManager,
+            mappers, workoutRepository, workoutCategoryRepository
         )
     }
 }

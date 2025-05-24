@@ -2,6 +2,7 @@ package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,12 +17,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,7 +37,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,9 +49,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -50,11 +62,10 @@ import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
-import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.ActiveWorkoutMiniBar
-import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.TrainingRecorderBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutTemplateBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
 
 @Composable
 fun WorkoutScreen(
@@ -62,9 +73,11 @@ fun WorkoutScreen(
     workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
     val workoutTemplates by workoutViewModel.workoutTemplates.collectAsState()
+    val filteredWorkoutTemplates by workoutViewModel.filteredWorkoutTemplates.collectAsState()
+    val templateSearchQuery by workoutViewModel.templateSearchQuery.collectAsState()
     val activeWorkout by workoutViewModel.activeWorkout.collectAsState()
-    val showWorkoutRecorder by workoutViewModel.showWorkoutRecorder.collectAsState()
     val currentUserId by workoutViewModel.currentUserId.collectAsState()
+    val focusManager = LocalFocusManager.current
 
     // Stan dla wyświetlania bottom sheet z szczegółami szablonu
     var selectedTemplate by remember { mutableStateOf<WorkoutTemplate?>(null) }
@@ -81,25 +94,7 @@ fun WorkoutScreen(
         }
     }
 
-    // When active workout changes (including when it becomes null), update the UI
-    LaunchedEffect(activeWorkout) {
-        // If active workout becomes null, ensure the bottom sheet is hidden
-        if (activeWorkout == null) {
-            workoutViewModel.showWorkoutRecorder(false)
-        }
-    }
-
-    // Obsługa recorderów treningu i szablonu
-    if (showWorkoutRecorder && activeWorkout != null) {
-        TrainingRecorderBottomSheet(
-            workout = activeWorkout!!,
-            onDismiss = { workoutViewModel.showWorkoutRecorder(false) },
-            onWorkoutFinish = { workout -> workoutViewModel.finishWorkout(workout) },
-            onWorkoutCancel = { workout -> workoutViewModel.cancelWorkout(workout.id) },
-            navController = navController
-        )
-    }
-
+    // Obsługa szablonu treningu
     if (showTemplateSheet) {
         WorkoutTemplateBottomSheet(
             isEditing = isCreatingNewTemplate,
@@ -126,7 +121,7 @@ fun WorkoutScreen(
     AppScaffold(
         navController = navController,
         workoutViewModel = workoutViewModel,
-        contentPadding = PaddingValues(bottom = 80.dp) // Dodajemy padding na dole
+        contentPadding = PaddingValues(bottom = 80.dp)
     ) { paddingValues ->
         // Main content
         Column(
@@ -134,7 +129,7 @@ fun WorkoutScreen(
                 .fillMaxSize()
                 .padding(16.dp,0.dp,16.dp,16.dp)
                 .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
-                .padding(paddingValues) // Używamy paddingValues przekazanego z AppScaffold
+                .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
             // Title row with settings icon
@@ -163,30 +158,29 @@ fun WorkoutScreen(
                 }
             }
 
-            // Search field
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                shape = RoundedCornerShape(28.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFEFF1F5)
-                )
-            ) {
-                Row(
+            // Template search bar (only show if there are templates)
+            if (workoutTemplates.isNotEmpty()) {
+                OutlinedTextField(
+                    value = templateSearchQuery,
+                    onValueChange = { workoutViewModel.updateTemplateSearchQuery(it) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.search_workout_placeholder),
-                        color = Color.Gray
-                    )
-                }
+                        .padding(bottom = 16.dp),
+                    placeholder = { Text(stringResource(R.string.search_templates)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(32.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = LightGrayBackground,
+                        unfocusedContainerColor = LightGrayBackground,
+                        cursorColor = Color.Black,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             // Quick start section
             Text(
@@ -201,6 +195,7 @@ fun WorkoutScreen(
                     if (activeWorkout == null) {
                         workoutViewModel.startNewWorkout(currentUserId)
                     }
+                    // Always show the recorder (whether new or existing workout)
                     workoutViewModel.showWorkoutRecorder(true)
                 },
                 modifier = Modifier
@@ -249,7 +244,7 @@ fun WorkoutScreen(
                 }
             }
 
-            // List of workout templates
+            // List of workout templates (use filtered list)
             if (workoutTemplates.isEmpty()) {
                 // Empty state
                 EmptyTemplatesState(
@@ -259,8 +254,11 @@ fun WorkoutScreen(
                         showTemplateSheet = true
                     }
                 )
+            } else if (filteredWorkoutTemplates.isEmpty() && templateSearchQuery.isNotEmpty()) {
+                // No search results state
+                NoTemplatesFoundState()
             } else {
-                workoutTemplates.forEach { template ->
+                filteredWorkoutTemplates.forEach { template ->
                     WorkoutTemplateItem(
                         template = template,
                         onEditClick = {
@@ -318,6 +316,44 @@ fun EmptyTemplatesState(
 
             Text(
                 text = stringResource(R.string.create_first_template),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+fun NoTemplatesFoundState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = Color.LightGray
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = stringResource(R.string.no_templates_found),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = stringResource(R.string.try_different_search),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.Gray
             )

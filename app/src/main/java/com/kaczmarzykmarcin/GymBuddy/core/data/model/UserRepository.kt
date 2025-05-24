@@ -27,9 +27,11 @@ class UserRepository @Inject constructor(
     private val userProfileDao: UserProfileDao,
     private val userStatsDao: UserStatsDao,
     private val userAchievementDao: UserAchievementDao,
+    private val workoutCategoryDao: WorkoutCategoryDao,
     private val syncManager: SyncManager,
     private val mappers: UserMappers,
-    private val workoutRepository: WorkoutRepository
+    private val workoutRepository: WorkoutRepository,
+    private val workoutCategoryRepository: WorkoutCategoryRepository
 ) {
     private val TAG = "UserRepository"
 
@@ -72,6 +74,9 @@ class UserRepository @Inject constructor(
 
             // Pobierz pełne dane użytkownika z Firebase
             downloadFullUserData(firebaseUser.uid)
+
+            // Inicjalizuj domyślne kategorie treningowe
+            workoutCategoryRepository.initializeDefaultCategories(firebaseUser.uid)
 
             // Dodaj pierwsze osiągnięcie lokalnie i zsynchronizuj
             addAchievementForUser(firebaseUser.uid, Achievement.FIRST_WORKOUT.id)
@@ -145,6 +150,46 @@ class UserRepository @Inject constructor(
                 userAchievementDao.insertUserAchievements(achievementEntities)
                 Log.d(TAG, "Saved basic user data to local database")
 
+                // Synchronizuj kategorie treningowe
+                try {
+                    Log.d(TAG, "Synchronizing workout categories for user: $userId")
+                    val categoriesResult = remoteDataSource.getUserWorkoutCategories(userId)
+
+                    if (categoriesResult.isSuccess) {
+                        val categories = categoriesResult.getOrNull()!!
+                        Log.d(TAG, "Found ${categories.size} categories to sync")
+
+                        categories.forEach { category ->
+                            // Sprawdź czy kategoria już istnieje lokalnie
+                            val existingCategory = workoutCategoryDao.getWorkoutCategoryById(category.id)
+                            if (existingCategory == null) {
+                                // Dodaj nową kategorię
+                                val entity = mappers.toEntity(category, needsSync = false)
+                                workoutCategoryDao.insertWorkoutCategory(entity)
+                                Log.d(TAG, "Added category: ${category.name}")
+                            } else {
+                                // Aktualizuj istniejącą kategorię
+                                val entity = mappers.toEntity(category, needsSync = false)
+                                workoutCategoryDao.updateWorkoutCategory(entity)
+                                Log.d(TAG, "Updated category: ${category.name}")
+                            }
+                        }
+
+                        // Inicjalizuj domyślne kategorie jeśli ich nie ma
+                        workoutCategoryRepository.initializeDefaultCategories(userId)
+
+                        Log.d(TAG, "Successfully synchronized ${categories.size} workout categories")
+                    } else {
+                        Log.e(TAG, "Failed to sync workout categories: ${categoriesResult.exceptionOrNull()?.message}")
+                        // Mimo błędu, spróbuj zainicjalizować domyślne kategorie lokalnie
+                        workoutCategoryRepository.initializeDefaultCategories(userId)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error synchronizing workout categories", e)
+                    // Mimo błędu, spróbuj zainicjalizować domyślne kategorie lokalnie
+                    workoutCategoryRepository.initializeDefaultCategories(userId)
+                }
+
                 // Synchronizuj również szablony treningów i historię treningów
                 try {
                     Log.d(TAG, "Synchronizing workout templates and history for user: $userId")
@@ -175,6 +220,44 @@ class UserRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error downloading full user data", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Loguje użytkownika i synchronizuje jego dane
+     */
+    suspend fun signInAndSyncData(firebaseUser: FirebaseUser): Result<UserData> {
+        return try {
+            Log.d(TAG, "Signing in and syncing data for user: ${firebaseUser.uid}")
+
+            // Sprawdź czy użytkownik istnieje w Firebase
+            val userResult = remoteDataSource.getUser(firebaseUser.uid)
+
+            if (userResult.isFailure) {
+                // Jeśli użytkownik nie istnieje, utwórz go
+                Log.d(TAG, "User doesn't exist in Firebase, creating new user")
+                val createResult = createUser(firebaseUser)
+                if (createResult.isFailure) {
+                    return Result.failure(createResult.exceptionOrNull() ?: Exception("Failed to create user"))
+                }
+            }
+
+            // Pobierz pełne dane użytkownika i zsynchronizuj
+            Log.d(TAG, "Downloading and syncing full user data")
+            val fullDataResult = downloadFullUserData(firebaseUser.uid)
+
+            if (fullDataResult.isSuccess) {
+                // Aktualizuj czas ostatniego logowania
+                updateLastLogin(firebaseUser.uid)
+
+                // Uruchom pełną synchronizację w tle
+                syncManager.forceFullSync(firebaseUser.uid)
+            }
+
+            fullDataResult
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sign in and sync data", e)
             Result.failure(e)
         }
     }

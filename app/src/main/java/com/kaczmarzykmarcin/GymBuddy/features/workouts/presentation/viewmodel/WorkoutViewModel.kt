@@ -53,6 +53,14 @@ class WorkoutViewModel @Inject constructor(
     private val _workoutTemplates = MutableStateFlow<List<WorkoutTemplate>>(emptyList())
     val workoutTemplates = _workoutTemplates.asStateFlow()
 
+    // Filtered workout templates (for search functionality)
+    private val _filteredWorkoutTemplates = MutableStateFlow<List<WorkoutTemplate>>(emptyList())
+    val filteredWorkoutTemplates = _filteredWorkoutTemplates.asStateFlow()
+
+    // Search query for templates
+    private val _templateSearchQuery = MutableStateFlow("")
+    val templateSearchQuery: StateFlow<String> = _templateSearchQuery
+
     // Active workout (if any)
     private val _activeWorkout = MutableStateFlow<CompletedWorkout?>(null)
     val activeWorkout = _activeWorkout.asStateFlow()
@@ -111,6 +119,35 @@ class WorkoutViewModel @Inject constructor(
             initializeCategories(user.uid)
             // Ładuj kategorie przy inicjalizacji ViewModel
             loadCategories()
+        }
+    }
+
+    /**
+     * Updates search query for templates and applies filtering
+     */
+    fun updateTemplateSearchQuery(query: String) {
+        _templateSearchQuery.value = query
+        applyTemplateFilters()
+    }
+
+    /**
+     * Applies search filter to workout templates
+     */
+    private fun applyTemplateFilters() {
+        viewModelScope.launch {
+            var filtered = _workoutTemplates.value
+
+            // Apply search query filter if not empty
+            val query = _templateSearchQuery.value.trim().lowercase()
+            if (query.isNotEmpty()) {
+                filtered = filtered.filter { template ->
+                    template.name.lowercase().contains(query) ||
+                            template.description.lowercase().contains(query)
+                }
+                Log.d(TAG, "Applied template search filter: '$query', results: ${filtered.size}")
+            }
+
+            _filteredWorkoutTemplates.value = filtered
         }
     }
 
@@ -254,6 +291,8 @@ class WorkoutViewModel @Inject constructor(
             try {
                 workoutRepository.getUserWorkoutTemplates(userId).collect { templates ->
                     _workoutTemplates.value = templates
+                    // Apply current filters to the new data
+                    applyTemplateFilters()
                     Log.d(TAG, "Loaded ${templates.size} workout templates")
                 }
             } catch (e: Exception) {
