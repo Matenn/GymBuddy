@@ -1,0 +1,88 @@
+package com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.components
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.kaczmarzykmarcin.GymBuddy.R
+import com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.viewmodel.StatisticsViewModel
+
+@Composable
+fun AllCategoriesStatistics(
+    viewModel: StatisticsViewModel,
+    modifier: Modifier = Modifier
+) {
+    val basicStats = viewModel.calculateBasicStats()
+    val activityData = viewModel.calculateWorkoutActivity()
+    val categoryDistribution = viewModel.calculateCategoryDistribution()
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Basic Statistics Cards
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            StatCard(
+                title = stringResource(R.string.workouts),
+                value = basicStats.totalWorkouts.toString(),
+                modifier = Modifier.weight(1f)
+            )
+
+            StatCard(
+                title = stringResource(R.string.total_time),
+                value = basicStats.totalTimeFormatted,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Workout Activity Chart
+        SectionTitle(title = stringResource(R.string.workout_activity))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(16.dp)
+            ) {
+                ActivityBarChart(
+                    data = activityData,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        // Category Distribution Chart
+        if (categoryDistribution.isNotEmpty()) {
+            SectionTitle(title = stringResource(R.string.workout_distribution))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                        .padding(16.dp)
+                ) {
+                    CategoryPieChart(
+                        data = categoryDistribution,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
+}

@@ -95,10 +95,10 @@ dependencies {
     implementation(libs.coil.compose)
 
     // Biblioteka do wykresów - Vico
-    implementation(libs.compose)
-    implementation(libs.compose.m3)
-    implementation(libs.core)
-
+    implementation("com.patrykandpatrick.vico:compose:2.1.2")
+    implementation("com.patrykandpatrick.vico:compose-m3:2.1.2")
+    implementation("com.patrykandpatrick.vico:core:2.1.2")
+    implementation("com.patrykandpatrick.vico:views:2.1.2")
     // ViewModel dla Compose
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 

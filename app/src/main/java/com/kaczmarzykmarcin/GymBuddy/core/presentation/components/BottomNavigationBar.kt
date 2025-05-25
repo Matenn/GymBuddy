@@ -135,5 +135,6 @@ fun BottomNavigationBar(
                 indicatorColor = Color.White
             )
         )
+
     }
 }

@@ -177,6 +177,22 @@
     <string name="no_templates_found">Nie znaleziono szablonów</string>
     <string name="active_workout_in_progress">You have active workout already</string>
     <string name="resume_current_workout">Resume current workout</string>
+    <string name="workouts">Workouts</string>
+    <string name="total_time">Total time</string>
+    <string name="workout_activity">Workout activity</string>
+    <string name="workout_distribution">Workout distribution</string>
+    <string name="progress_chart">Progess chart</string>
+    <string name="all">All\n</string>
+    <string name="exercise_distribution">Exercise distribution</string>
+    <string name="reps">Reps</string>
+    <string name="average_weight">Average weight</string>
+    <string name="average_sets">Average sets</string>
+    <string name="average_reps">Average reps</string>
+    <string name="personal_record">Personal records</string>
+    <string name="statistics_title">Statistics</string>
+
+
+    <!-- Statistics Screen -->
 
 
 </resources>
