@@ -7,8 +7,10 @@ enum class TimePeriod(val displayName: String) {
     WEEK("Tydzień"),
     MONTH("Miesiąc"),
     THREE_MONTHS("3 mies."),
-    YEAR("Rok")
+    YEAR("Rok"),
+    ALL("Wszystkie")
 }
+
 
 enum class StatType(val displayName: String) {
     CATEGORY("Kategoria"),

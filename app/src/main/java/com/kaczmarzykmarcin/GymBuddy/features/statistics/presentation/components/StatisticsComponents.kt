@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -24,6 +25,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.StatType
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.TimePeriod
 import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import kotlinx.coroutines.launch
 
 @Composable
 fun TimePeriodSelector(
@@ -31,26 +33,49 @@ fun TimePeriodSelector(
     onPeriodSelected: (TimePeriod) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(TimePeriod.values()) { period ->
-            val isSelected = period == selectedPeriod
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-            Button(
-                onClick = { onPeriodSelected(period) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSelected) Color.Black else LightGrayBackground,
-                    contentColor = if (isSelected) Color.White else Color.Black
-                ),
-                shape = RoundedCornerShape(32.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = period.displayName,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
+    // Auto-scroll when selection changes
+    LaunchedEffect(selectedPeriod) {
+        val selectedIndex = TimePeriod.values().indexOf(selectedPeriod)
+        if (selectedIndex != -1) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(selectedIndex)
+            }
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(32.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        LazyRow(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp, 0.dp, 8.dp, 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(TimePeriod.values()) { period ->
+                val isSelected = period == selectedPeriod
+
+                Button(
+                    onClick = { onPeriodSelected(period) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) Color.Black else Color.Transparent,
+                        contentColor = if (isSelected) Color.White else Color.Black
+                    ),
+                    shape = RoundedCornerShape(32.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = period.displayName,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
             }
         }
     }
@@ -62,26 +87,53 @@ fun StatTypeSelector(
     onTypeSelected: (StatType) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(StatType.values()) { type ->
-            val isSelected = type == selectedType
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
-            Button(
-                onClick = { onTypeSelected(type) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSelected) Color.Black else LightGrayBackground,
-                    contentColor = if (isSelected) Color.White else Color.Black
-                ),
-                shape = RoundedCornerShape(32.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+    // Auto-scroll when selection changes
+    LaunchedEffect(selectedType) {
+        val selectedIndex = StatType.values().indexOf(selectedType)
+        if (selectedIndex != -1) {
+            coroutineScope.launch {
+                listState.animateScrollToItem(selectedIndex)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.wrapContentWidth(),
+            shape = RoundedCornerShape(32.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            LazyRow(
+                state = listState,
+                modifier = Modifier.padding(8.dp, 0.dp, 8.dp, 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = type.displayName,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
+                items(StatType.values()) { type ->
+                    val isSelected = type == selectedType
+
+                    Button(
+                        onClick = { onTypeSelected(type) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) Color.Black else Color.Transparent,
+                            contentColor = if (isSelected) Color.White else Color.Black
+                        ),
+                        shape = RoundedCornerShape(32.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = type.displayName,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
             }
         }
     }

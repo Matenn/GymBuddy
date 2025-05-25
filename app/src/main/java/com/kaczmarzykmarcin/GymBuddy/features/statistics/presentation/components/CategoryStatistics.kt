@@ -18,7 +18,7 @@ fun CategoryStatistics(
     viewModel: StatisticsViewModel,
     modifier: Modifier = Modifier
 ) {
-    val basicStats = viewModel.calculateBasicStats()
+    val basicStats by viewModel.basicStats.collectAsState()
     val progressData = viewModel.calculateProgressData()
     val exerciseDistribution = viewModel.calculateExerciseDistribution()
     val selectedExercisesForChart by viewModel.selectedExercisesForChart.collectAsState()

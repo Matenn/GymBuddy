@@ -72,6 +72,16 @@ class StatisticsViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    val basicStats = filteredWorkouts.map { workouts ->
+        val totalWorkouts = workouts.size
+        val totalTimeMinutes = workouts.sumOf { it.duration / 60 } // Convert seconds to minutes
+
+        BasicStatistics(
+            totalWorkouts = totalWorkouts,
+            totalTimeMinutes = totalTimeMinutes.toInt()
+        )
+    }.stateIn(viewModelScope, SharingStarted.Lazily, BasicStatistics(0, 0))
+
     val exerciseStatistics = combine(
         selectedExercise,
         allWorkouts,
@@ -169,18 +179,6 @@ class StatisticsViewModel @Inject constructor(
         }
     }
 
-    // Calculate basic statistics
-    fun calculateBasicStats(): BasicStatistics {
-        val workouts = filteredWorkouts.value
-        val totalWorkouts = workouts.size
-        val totalTimeMinutes = workouts.sumOf { it.duration / 60 } // Convert seconds to minutes
-
-        return BasicStatistics(
-            totalWorkouts = totalWorkouts,
-            totalTimeMinutes = totalTimeMinutes.toInt()
-        )
-    }
-
     // Calculate workout activity data for chart
     fun calculateWorkoutActivity(): List<ActivityData> {
         val workouts = filteredWorkouts.value
@@ -191,7 +189,28 @@ class StatisticsViewModel @Inject constructor(
             TimePeriod.MONTH -> calculateMonthlyActivity(workouts)
             TimePeriod.THREE_MONTHS -> calculateThreeMonthsActivity(workouts)
             TimePeriod.YEAR -> calculateYearlyActivity(workouts)
+            TimePeriod.ALL -> calculateAllTimeActivity(workouts)
         }
+    }
+
+    private fun calculateAllTimeActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
+        if (workouts.isEmpty()) return emptyList()
+
+        // Grupuj treningi według roku
+        val workoutsByYear = workouts.groupBy { workout ->
+            workout.endTime?.let { endTime ->
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = endTime.seconds * 1000
+                calendar.get(Calendar.YEAR)
+            } ?: 0
+        }.filterKeys { it != 0 } // Usuń treningi bez daty
+
+        return workoutsByYear.map { (year, yearWorkouts) ->
+            ActivityData(
+                label = year.toString(),
+                minutes = yearWorkouts.sumOf { it.duration / 60 }.toInt()
+            )
+        }.sortedBy { it.label.toIntOrNull() ?: 0 }
     }
 
     // Calculate category distribution
@@ -326,6 +345,7 @@ class StatisticsViewModel @Inject constructor(
             TimePeriod.MONTH -> calculateMonthlyProgressPoints(exerciseWorkouts, exerciseId)
             TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPoints(exerciseWorkouts, exerciseId)
             TimePeriod.YEAR -> calculateYearlyProgressPoints(exerciseWorkouts, exerciseId)
+            TimePeriod.ALL -> calculateAllTimeProgressPoints(exerciseWorkouts, exerciseId)
         }
 
         return ProgressData(
@@ -333,6 +353,37 @@ class StatisticsViewModel @Inject constructor(
             exerciseName = exerciseName,
             progressPoints = progressPoints
         )
+    }
+
+    private fun calculateAllTimeProgressPoints(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String
+    ): List<ProgressPoint> {
+        // Grupuj według miesięcy i pobierz najlepszy wynik dla każdego miesiąca
+        val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
+
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+            val bestSet = exerciseData?.sets?.maxByOrNull { it.weight }
+
+            if (bestSet != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val year = calendar.get(Calendar.YEAR)
+                val month = calendar.get(Calendar.MONTH)
+
+                ProgressPoint(
+                    timestamp = workout.endTime.seconds,
+                    weight = bestSet.weight,
+                    reps = bestSet.reps,
+                    label = "${monthNames[month]} $year"
+                )
+            } else null
+        }.groupBy { it.label }
+            .mapValues { it.value.maxByOrNull { point -> point.weight } }
+            .values
+            .filterNotNull()
+            .sortedBy { it.timestamp }
     }
 
     private fun calculateExerciseStatistics(
@@ -367,6 +418,7 @@ class StatisticsViewModel @Inject constructor(
             TimePeriod.MONTH -> calculateMonthlyProgressPoints(exerciseWorkouts, exercise.id)
             TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPoints(exerciseWorkouts, exercise.id)
             TimePeriod.YEAR -> calculateYearlyProgressPoints(exerciseWorkouts, exercise.id)
+            TimePeriod.ALL -> calculateAllTimeProgressPoints(exerciseWorkouts, exercise.id)
         }
 
         return ExerciseStatisticsData(
@@ -385,6 +437,10 @@ class StatisticsViewModel @Inject constructor(
         workouts: List<CompletedWorkout>,
         timePeriod: TimePeriod
     ): List<CompletedWorkout> {
+        if (timePeriod == TimePeriod.ALL) {
+            return workouts // Zwróć wszystkie treningi bez filtrowania
+        }
+
         val now = Calendar.getInstance()
         val startTime = Calendar.getInstance()
 
@@ -393,6 +449,7 @@ class StatisticsViewModel @Inject constructor(
             TimePeriod.MONTH -> startTime.add(Calendar.MONTH, -1)
             TimePeriod.THREE_MONTHS -> startTime.add(Calendar.MONTH, -3)
             TimePeriod.YEAR -> startTime.add(Calendar.YEAR, -1)
+            TimePeriod.ALL -> return workouts // Już obsłużone powyżej
         }
 
         return workouts.filter { workout ->
