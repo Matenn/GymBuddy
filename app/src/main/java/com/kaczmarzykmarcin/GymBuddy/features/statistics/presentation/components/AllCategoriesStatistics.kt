@@ -17,8 +17,9 @@ fun AllCategoriesStatistics(
     modifier: Modifier = Modifier
 ) {
     val basicStats by viewModel.basicStats.collectAsState()
-    val activityData = viewModel.calculateWorkoutActivity()
-    val categoryDistribution = viewModel.calculateCategoryDistribution()
+    // Używamy reaktywnych StateFlow zamiast funkcji
+    val activityData by viewModel.workoutActivity.collectAsState()
+    val categoryDistribution by viewModel.categoryDistribution.collectAsState()
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Basic Statistics Cards
@@ -51,7 +52,7 @@ fun AllCategoriesStatistics(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(250.dp)
                     .padding(16.dp)
             ) {
                 ActivityBarChart(

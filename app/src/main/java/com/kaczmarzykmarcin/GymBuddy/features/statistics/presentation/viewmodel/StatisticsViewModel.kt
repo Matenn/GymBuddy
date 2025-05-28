@@ -82,6 +82,119 @@ class StatisticsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Lazily, BasicStatistics(0, 0))
 
+    // REAKTYWNE WERSJE KALKULACJI
+    val workoutActivity = combine(
+        filteredWorkouts,
+        selectedTimePeriod
+    ) { workouts, timePeriod ->
+        Log.d(TAG, "Recalculating activity: ${workouts.size} workouts, period: $timePeriod")
+
+        when (timePeriod) {
+            TimePeriod.WEEK -> calculateWeeklyActivity(workouts)
+            TimePeriod.MONTH -> calculateMonthlyActivity(workouts)
+            TimePeriod.THREE_MONTHS -> calculateThreeMonthsActivity(workouts)
+            TimePeriod.YEAR -> calculateYearlyActivity(workouts)
+            TimePeriod.ALL -> calculateAllTimeActivity(workouts)
+        }.also { result ->
+            Log.d(TAG, "Activity result: ${result.size} data points")
+            result.forEach { Log.d(TAG, "Activity: ${it.label} = ${it.minutes}") }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val categoryDistribution = combine(
+        filteredWorkouts,
+        allCategories
+    ) { workouts, categories ->
+        Log.d(TAG, "Recalculating category distribution: ${workouts.size} workouts")
+
+        val categoryWorkoutCounts = workouts
+            .groupBy { it.categoryId }
+            .mapValues { it.value.size }
+
+        val total = workouts.size
+        if (total == 0) return@combine emptyList<CategoryDistribution>()
+
+        val categoryDistributions = categoryWorkoutCounts
+            .mapNotNull { (categoryId, count) ->
+                val category = categories.find { it.id == categoryId }
+                if (category != null) {
+                    CategoryDistribution(
+                        categoryName = category.name,
+                        categoryColor = category.color,
+                        count = count,
+                        percentage = (count.toFloat() / total * 100).toInt()
+                    )
+                } else null
+            }
+            .sortedByDescending { it.count }
+
+        // Take top 5 and group rest as "Other"
+        val top5 = categoryDistributions.take(5)
+        val rest = categoryDistributions.drop(5)
+
+        if (rest.isNotEmpty()) {
+            val otherCount = rest.sumOf { it.count }
+            val otherPercentage = rest.sumOf { it.percentage }
+            top5 + CategoryDistribution(
+                categoryName = "Inne",
+                categoryColor = "#607D8B",
+                count = otherCount,
+                percentage = otherPercentage
+            )
+        } else {
+            top5
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val exerciseDistribution = filteredWorkouts.map { workouts ->
+        Log.d(TAG, "Recalculating exercise distribution: ${workouts.size} workouts")
+
+        val exerciseCounts = mutableMapOf<String, Int>()
+
+        workouts.forEach { workout ->
+            workout.exercises.forEach { exercise ->
+                val currentCount = exerciseCounts[exercise.exerciseId] ?: 0
+                exerciseCounts[exercise.exerciseId] = currentCount + exercise.sets.size
+            }
+        }
+
+        val total = exerciseCounts.values.sum()
+        if (total == 0) return@map emptyList<ExerciseDistribution>()
+
+        val exerciseDistributions = exerciseCounts
+            .map { (exerciseId, count) ->
+                val exerciseName = workouts
+                    .flatMap { it.exercises }
+                    .find { it.exerciseId == exerciseId }
+                    ?.name ?: "Unknown"
+
+                ExerciseDistribution(
+                    exerciseId = exerciseId,
+                    exerciseName = exerciseName,
+                    setCount = count,
+                    percentage = (count.toFloat() / total * 100).toInt()
+                )
+            }
+            .sortedByDescending { it.setCount }
+
+        // Take top 5 and group rest as "Other"
+        val top5 = exerciseDistributions.take(5)
+        val rest = exerciseDistributions.drop(5)
+
+        if (rest.isNotEmpty()) {
+            val otherCount = rest.sumOf { it.setCount }
+            val otherPercentage = rest.sumOf { it.percentage }
+            top5 + ExerciseDistribution(
+                exerciseId = "other",
+                exerciseName = "Inne",
+                setCount = otherCount,
+                percentage = otherPercentage
+            )
+        } else {
+            top5
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
     val exerciseStatistics = combine(
         selectedExercise,
         allWorkouts,
@@ -134,6 +247,7 @@ class StatisticsViewModel @Inject constructor(
     }
 
     fun selectTimePeriod(period: TimePeriod) {
+        Log.d(TAG, "Selecting time period: $period")
         _selectedTimePeriod.value = period
     }
 
@@ -179,131 +293,20 @@ class StatisticsViewModel @Inject constructor(
         }
     }
 
-    // Calculate workout activity data for chart
+    // STARE FUNKCJE - DEPRECATED (zachowane dla kompatybilności)
+    @Deprecated("Use reactive workoutActivity StateFlow instead")
     fun calculateWorkoutActivity(): List<ActivityData> {
-        val workouts = filteredWorkouts.value
-        val timePeriod = selectedTimePeriod.value
-
-        return when (timePeriod) {
-            TimePeriod.WEEK -> calculateWeeklyActivity(workouts)
-            TimePeriod.MONTH -> calculateMonthlyActivity(workouts)
-            TimePeriod.THREE_MONTHS -> calculateThreeMonthsActivity(workouts)
-            TimePeriod.YEAR -> calculateYearlyActivity(workouts)
-            TimePeriod.ALL -> calculateAllTimeActivity(workouts)
-        }
+        return workoutActivity.value
     }
 
-    private fun calculateAllTimeActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
-        if (workouts.isEmpty()) return emptyList()
-
-        // Grupuj treningi według roku
-        val workoutsByYear = workouts.groupBy { workout ->
-            workout.endTime?.let { endTime ->
-                val calendar = Calendar.getInstance()
-                calendar.timeInMillis = endTime.seconds * 1000
-                calendar.get(Calendar.YEAR)
-            } ?: 0
-        }.filterKeys { it != 0 } // Usuń treningi bez daty
-
-        return workoutsByYear.map { (year, yearWorkouts) ->
-            ActivityData(
-                label = year.toString(),
-                minutes = yearWorkouts.sumOf { it.duration / 60 }.toInt()
-            )
-        }.sortedBy { it.label.toIntOrNull() ?: 0 }
-    }
-
-    // Calculate category distribution
+    @Deprecated("Use reactive categoryDistribution StateFlow instead")
     fun calculateCategoryDistribution(): List<CategoryDistribution> {
-        val workouts = filteredWorkouts.value
-        val categories = allCategories.value
-
-        val categoryWorkoutCounts = workouts
-            .groupBy { it.categoryId }
-            .mapValues { it.value.size }
-
-        val total = workouts.size
-        if (total == 0) return emptyList()
-
-        val categoryDistributions = categoryWorkoutCounts
-            .mapNotNull { (categoryId, count) ->
-                val category = categories.find { it.id == categoryId }
-                if (category != null) {
-                    CategoryDistribution(
-                        categoryName = category.name,
-                        categoryColor = category.color,
-                        count = count,
-                        percentage = (count.toFloat() / total * 100).toInt()
-                    )
-                } else null
-            }
-            .sortedByDescending { it.count }
-
-        // Take top 5 and group rest as "Other"
-        val top5 = categoryDistributions.take(5)
-        val rest = categoryDistributions.drop(5)
-
-        return if (rest.isNotEmpty()) {
-            val otherCount = rest.sumOf { it.count }
-            val otherPercentage = rest.sumOf { it.percentage }
-            top5 + CategoryDistribution(
-                categoryName = "Inne",
-                categoryColor = "#607D8B",
-                count = otherCount,
-                percentage = otherPercentage
-            )
-        } else {
-            top5
-        }
+        return categoryDistribution.value
     }
 
-    // Calculate exercise distribution for category
+    @Deprecated("Use reactive exerciseDistribution StateFlow instead")
     fun calculateExerciseDistribution(): List<ExerciseDistribution> {
-        val workouts = filteredWorkouts.value
-        val exerciseCounts = mutableMapOf<String, Int>()
-
-        workouts.forEach { workout ->
-            workout.exercises.forEach { exercise ->
-                val currentCount = exerciseCounts[exercise.exerciseId] ?: 0
-                exerciseCounts[exercise.exerciseId] = currentCount + exercise.sets.size
-            }
-        }
-
-        val total = exerciseCounts.values.sum()
-        if (total == 0) return emptyList()
-
-        val exerciseDistributions = exerciseCounts
-            .map { (exerciseId, count) ->
-                val exerciseName = workouts
-                    .flatMap { it.exercises }
-                    .find { it.exerciseId == exerciseId }
-                    ?.name ?: "Unknown"
-
-                ExerciseDistribution(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    setCount = count,
-                    percentage = (count.toFloat() / total * 100).toInt()
-                )
-            }
-            .sortedByDescending { it.setCount }
-
-        // Take top 5 and group rest as "Other"
-        val top5 = exerciseDistributions.take(5)
-        val rest = exerciseDistributions.drop(5)
-
-        return if (rest.isNotEmpty()) {
-            val otherCount = rest.sumOf { it.setCount }
-            val otherPercentage = rest.sumOf { it.percentage }
-            top5 + ExerciseDistribution(
-                exerciseId = "other",
-                exerciseName = "Inne",
-                setCount = otherCount,
-                percentage = otherPercentage
-            )
-        } else {
-            top5
-        }
+        return exerciseDistribution.value
     }
 
     // Calculate progress data for exercises
@@ -459,89 +462,146 @@ class StatisticsViewModel @Inject constructor(
         }
     }
 
-    // Helper methods for calculating activity data
+    // Helper methods for calculating activity data - POPRAWIONE
     private fun calculateWeeklyActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
         val daysOfWeek = listOf("Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd")
-        val calendar = Calendar.getInstance()
+        val today = Calendar.getInstance()
+
+        // Znajdź poniedziałek bieżącego tygodnia
+        val startOfWeek = Calendar.getInstance().apply {
+            time = today.time
+            val dayOfWeek = get(Calendar.DAY_OF_WEEK)
+            val daysFromMonday = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - Calendar.MONDAY
+            add(Calendar.DAY_OF_YEAR, -daysFromMonday)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
 
         return (0..6).map { dayOffset ->
-            calendar.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            calendar.add(Calendar.DAY_OF_YEAR, dayOffset)
+            val currentDay = Calendar.getInstance().apply {
+                time = startOfWeek.time
+                add(Calendar.DAY_OF_YEAR, dayOffset)
+            }
+
+            val nextDay = Calendar.getInstance().apply {
+                time = currentDay.time
+                add(Calendar.DAY_OF_YEAR, 1)
+            }
 
             val dayWorkouts = workouts.filter { workout ->
                 workout.endTime?.let { endTime ->
-                    val workoutCalendar = Calendar.getInstance()
-                    workoutCalendar.timeInMillis = endTime.seconds * 1000
-                    workoutCalendar.get(Calendar.DAY_OF_YEAR) == calendar.get(Calendar.DAY_OF_YEAR)
+                    val workoutTimeMillis = endTime.seconds * 1000
+                    workoutTimeMillis >= currentDay.timeInMillis && workoutTimeMillis < nextDay.timeInMillis
                 } ?: false
             }
 
             ActivityData(
                 label = daysOfWeek[dayOffset],
-                minutes = dayWorkouts.sumOf { it.duration / 60 }.toInt()
+                minutes = dayWorkouts.sumOf { it.duration }.toInt()
             )
         }
     }
 
     private fun calculateMonthlyActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
-        // Calculate average for each week of the month
+        val currentCalendar = Calendar.getInstance()
+        val currentMonth = currentCalendar.get(Calendar.MONTH)
+        val currentYear = currentCalendar.get(Calendar.YEAR)
+
         return (1..4).map { week ->
             val weekWorkouts = workouts.filter { workout ->
                 workout.endTime?.let { endTime ->
-                    val calendar = Calendar.getInstance()
-                    calendar.timeInMillis = endTime.seconds * 1000
-                    val weekOfMonth = calendar.get(Calendar.WEEK_OF_MONTH)
-                    weekOfMonth == week
+                    val workoutCalendar = Calendar.getInstance()
+                    workoutCalendar.timeInMillis = endTime.seconds * 1000
+
+                    // Sprawdzamy czy trening jest z bieżącego miesiąca i roku
+                    val workoutMonth = workoutCalendar.get(Calendar.MONTH)
+                    val workoutYear = workoutCalendar.get(Calendar.YEAR)
+                    val weekOfMonth = workoutCalendar.get(Calendar.WEEK_OF_MONTH)
+
+                    workoutMonth == currentMonth &&
+                            workoutYear == currentYear &&
+                            weekOfMonth == week
                 } ?: false
             }
 
             ActivityData(
                 label = "Tydz. $week",
-                minutes = weekWorkouts.sumOf { it.duration / 60 }.toInt()
+                minutes = weekWorkouts.sumOf { it.duration }.toInt()
             )
         }
     }
 
     private fun calculateThreeMonthsActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
         val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
-        val calendar = Calendar.getInstance()
+        val currentCalendar = Calendar.getInstance()
 
         return (0..2).map { monthOffset ->
-            calendar.add(Calendar.MONTH, -monthOffset)
-            val month = calendar.get(Calendar.MONTH)
+            // Tworzymy nowy Calendar dla każdej iteracji
+            val targetCalendar = Calendar.getInstance().apply {
+                time = currentCalendar.time
+                add(Calendar.MONTH, -monthOffset)
+            }
+
+            val targetMonth = targetCalendar.get(Calendar.MONTH)
+            val targetYear = targetCalendar.get(Calendar.YEAR)
 
             val monthWorkouts = workouts.filter { workout ->
                 workout.endTime?.let { endTime ->
                     val workoutCalendar = Calendar.getInstance()
                     workoutCalendar.timeInMillis = endTime.seconds * 1000
-                    workoutCalendar.get(Calendar.MONTH) == month
+                    workoutCalendar.get(Calendar.MONTH) == targetMonth &&
+                            workoutCalendar.get(Calendar.YEAR) == targetYear
                 } ?: false
             }
 
             ActivityData(
-                label = monthNames[month],
-                minutes = monthWorkouts.sumOf { it.duration / 60 }.toInt()
+                label = monthNames[targetMonth],
+                minutes = monthWorkouts.sumOf { it.duration }.toInt()
             )
-        }.reversed()
+        }.reversed() // Odwracamy żeby mieć chronologiczny porządek
     }
 
     private fun calculateYearlyActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
         val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR)
 
         return (0..11).map { month ->
             val monthWorkouts = workouts.filter { workout ->
                 workout.endTime?.let { endTime ->
                     val calendar = Calendar.getInstance()
                     calendar.timeInMillis = endTime.seconds * 1000
-                    calendar.get(Calendar.MONTH) == month
+                    calendar.get(Calendar.MONTH) == month &&
+                            calendar.get(Calendar.YEAR) == currentYear
                 } ?: false
             }
 
             ActivityData(
                 label = monthNames[month],
-                minutes = monthWorkouts.sumOf { it.duration / 60 }.toInt()
+                minutes = monthWorkouts.sumOf { it.duration }.toInt()
             )
         }
+    }
+
+    private fun calculateAllTimeActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
+        if (workouts.isEmpty()) return emptyList()
+
+        // Grupuj treningi według roku
+        val workoutsByYear = workouts.groupBy { workout ->
+            workout.endTime?.let { endTime ->
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = endTime.seconds * 1000
+                calendar.get(Calendar.YEAR)
+            } ?: 0
+        }.filterKeys { it != 0 } // Usuń treningi bez daty
+
+        return workoutsByYear.map { (year, yearWorkouts) ->
+            ActivityData(
+                label = year.toString(),
+                minutes = yearWorkouts.sumOf { it.duration }.toInt()
+            )
+        }.sortedBy { it.label.toIntOrNull() ?: 0 }
     }
 
     // Helper methods for calculating progress points

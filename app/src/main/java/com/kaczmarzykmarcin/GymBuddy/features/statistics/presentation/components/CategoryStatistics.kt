@@ -20,7 +20,8 @@ fun CategoryStatistics(
 ) {
     val basicStats by viewModel.basicStats.collectAsState()
     val progressData = viewModel.calculateProgressData()
-    val exerciseDistribution = viewModel.calculateExerciseDistribution()
+    // Używamy reaktywnego StateFlow zamiast funkcji
+    val exerciseDistribution by viewModel.exerciseDistribution.collectAsState()
     val selectedExercisesForChart by viewModel.selectedExercisesForChart.collectAsState()
     val showAllExercisesInChart by viewModel.showAllExercisesInChart.collectAsState()
     val filteredWorkouts by viewModel.filteredWorkouts.collectAsState()

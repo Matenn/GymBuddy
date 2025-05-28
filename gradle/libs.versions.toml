@@ -47,6 +47,7 @@ roomRuntime = "2.7.1"
 runtime = "1.5.4"
 ui = "1.5.4"
 hilt = "2.56"
+scenecore = "1.0.0-alpha04"
 
 [libraries]
 androidx-compiler = { module = "androidx.compose.compiler:compiler", version.ref = "compiler" }
@@ -111,6 +112,7 @@ play-services-auth = { module = "com.google.android.gms:play-services-auth", ver
 play-services-auth-v2070 = { module = "com.google.android.gms:play-services-auth", version.ref = "playServicesAuthVersion" }
 play-services-maps = { module = "com.google.android.gms:play-services-maps", version.ref = "playServicesMaps" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+androidx-scenecore = { group = "androidx.xr.scenecore", name = "scenecore", version.ref = "scenecore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

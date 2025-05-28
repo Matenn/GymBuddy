@@ -47,6 +47,7 @@ android {
 dependencies {
 
     implementation(libs.hilt.android)
+    implementation(libs.androidx.scenecore)
     ksp(libs.hilt.android.compiler)
 
     implementation(libs.androidx.hilt.navigation.compose)
@@ -101,6 +102,10 @@ dependencies {
     implementation("com.patrykandpatrick.vico:views:2.1.2")
     // ViewModel dla Compose
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+
+    implementation ("io.github.ehsannarmani:compose-charts:0.1.7")
+
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
