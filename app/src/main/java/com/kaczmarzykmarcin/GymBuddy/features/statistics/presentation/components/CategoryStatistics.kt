@@ -20,7 +20,6 @@ fun CategoryStatistics(
 ) {
     val basicStats by viewModel.basicStats.collectAsState()
     val progressData = viewModel.calculateProgressData()
-    // Używamy reaktywnego StateFlow zamiast funkcji
     val exerciseDistribution by viewModel.exerciseDistribution.collectAsState()
     val selectedExercisesForChart by viewModel.selectedExercisesForChart.collectAsState()
     val showAllExercisesInChart by viewModel.showAllExercisesInChart.collectAsState()
@@ -54,56 +53,18 @@ fun CategoryStatistics(
             )
         }
 
-        // Progress Chart Section
-        SectionTitle(title = stringResource(R.string.progress_chart))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Exercise filter chips
-        if (availableExercises.isNotEmpty()) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 16.dp)
-            ) {
-                // "All" chip
-                item {
-                    ExerciseChipFilter(
-                        exerciseId = "all",
-                        exerciseName = stringResource(R.string.all),
-                        isSelected = showAllExercisesInChart,
-                        onToggle = { viewModel.toggleShowAllExercisesInChart() }
-                    )
-                }
-
-                // Individual exercise chips
-                items(availableExercises.toList()) { (exerciseId, exerciseName) ->
-                    ExerciseChipFilter(
-                        exerciseId = exerciseId,
-                        exerciseName = exerciseName,
-                        isSelected = selectedExercisesForChart.contains(exerciseId),
-                        onToggle = { viewModel.toggleExerciseForChart(exerciseId) }
-                    )
-                }
-            }
-        }
-
-        // Progress Chart
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(250.dp)
-                    .padding(16.dp)
-            ) {
-                ProgressLineChart(
-                    data = progressData,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
+        // Progress Chart Section with all elements in one card
+        ProgressLineChart(
+            data = progressData,
+            selectedExercisesForChart = selectedExercisesForChart,
+            showAllExercisesInChart = showAllExercisesInChart,
+            availableExercises = availableExercises,
+            onToggleExerciseForChart = viewModel::toggleExerciseForChart,
+            onToggleShowAllExercisesInChart = viewModel::toggleShowAllExercisesInChart,
+            modifier = Modifier.fillMaxWidth()
+        )
 
         // Exercise Distribution Chart
         if (exerciseDistribution.isNotEmpty()) {

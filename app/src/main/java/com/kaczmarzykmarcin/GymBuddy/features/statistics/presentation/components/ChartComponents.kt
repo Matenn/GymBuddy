@@ -60,6 +60,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
@@ -397,49 +398,444 @@ fun ActivityBarChart(
 @Composable
 fun ProgressLineChart(
     data: List<ProgressData>,
+    selectedExercisesForChart: Set<String>,
+    showAllExercisesInChart: Boolean,
+    availableExercises: Map<String, String>,
+    onToggleExerciseForChart: (String) -> Unit,
+    onToggleShowAllExercisesInChart: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val modelProducer = remember { CartesianChartModelProducer() }
-
-    LaunchedEffect(data) {
-        modelProducer.runTransaction {
-            lineSeries {
-                data.forEachIndexed { index, progressData ->
-                    series(progressData.progressPoints.map { it.weight.toFloat() })
-                }
-            }
-        }
-    }
-
-    if (data.isEmpty()) {
-        Box(
-            modifier = modifier.height(200.dp),
-            contentAlignment = Alignment.Center
+    if (availableExercises.isEmpty()) {
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
-            Text("Brak danych do wyświetlenia")
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(250.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Brak danych do wyświetlenia")
+            }
         }
         return
     }
 
+    // Filter data based on selection
+    val filteredData = remember(data, showAllExercisesInChart, selectedExercisesForChart) {
+        if (showAllExercisesInChart) {
+            data
+        } else {
+            data.filter { selectedExercisesForChart.contains(it.exerciseId) }
+        }
+    }
+
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    var selectedPointInfo by remember { mutableStateOf<Pair<String, ProgressPoint>?>(null) }
+    var markerPosition by remember { mutableStateOf(Offset.Zero) }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Title
+            Text(
+                text = "Progres obciążeń (kg)",
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                ),
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            // Exercise filter chips
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                // "All" chip
+                item {
+                    ExerciseChipFilter(
+                        exerciseId = "all",
+                        exerciseName = "Wszystkie",
+                        isSelected = showAllExercisesInChart,
+                        onToggle = onToggleShowAllExercisesInChart
+                    )
+                }
+
+                // Individual exercise chips
+                items(availableExercises.toList()) { (exerciseId, exerciseName) ->
+                    ExerciseChipFilter(
+                        exerciseId = exerciseId,
+                        exerciseName = exerciseName,
+                        isSelected = selectedExercisesForChart.contains(exerciseId),
+                        onToggle = { onToggleExerciseForChart(exerciseId) }
+                    )
+                }
+            }
+
+            // Chart
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(250.dp)
+            ) {
+                if (filteredData.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Brak danych dla wybranych ćwiczeń",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray
+                        )
+                    }
+                } else {
+                    ProgressLineChartCanvas(
+                        data = filteredData,
+                        onPointClick = { exerciseName, point, position ->
+                            if (exerciseName.isEmpty()) {
+                                // Empty exerciseName means click in empty area - hide marker
+                                selectedPointInfo = null
+                            } else {
+                                selectedPointInfo = if (selectedPointInfo?.first == exerciseName &&
+                                    selectedPointInfo?.second == point) {
+                                    null // Deselect if same point clicked
+                                } else {
+                                    exerciseName to point
+                                }
+                                markerPosition = position
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                // Marker popup
+                selectedPointInfo?.let { (exerciseName, point) ->
+                    Card(
+                        modifier = Modifier
+                            .offset(
+                                x = with(LocalDensity.current) {
+                                    (markerPosition.x).toDp() - 60.dp
+                                },
+                                y = with(LocalDensity.current) {
+                                    (markerPosition.y).toDp() - 70.dp
+                                }
+                            )
+                            .wrapContentSize(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = exerciseName,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                            Text(
+                                text = point.label,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.Gray
+                                )
+                            )
+                            Text(
+                                text = "${point.weight.toInt()} kg",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+
+                    // Triangle pointer
+                    Canvas(
+                        modifier = Modifier
+                            .offset(
+                                x = with(LocalDensity.current) { markerPosition.x.toDp() - 6.dp },
+                                y = with(LocalDensity.current) { markerPosition.y.toDp() - 12.dp }
+                            )
+                            .size(12.dp)
+                    ) {
+                        val path = androidx.compose.ui.graphics.Path().apply {
+                            moveTo(size.width / 2, size.height)
+                            lineTo(0f, 0f)
+                            lineTo(size.width, 0f)
+                            close()
+                        }
+                        drawPath(
+                            path = path,
+                            color = surfaceColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProgressLineChartCanvas(
+    data: List<ProgressData>,
+    onPointClick: (String, ProgressPoint, Offset) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val colors = listOf(
         Color(0xFF1976D2),
         Color(0xFF388E3C),
         Color(0xFFF57C00),
         Color(0xFFD32F2F),
-        Color(0xFF7B1FA2)
+        Color(0xFF7B1FA2),
+        Color(0xFF607D8B),
+        Color(0xFFE91E63),
+        Color(0xFF00BCD4),
+        Color(0xFF795548),
+        Color(0xFF9C27B0)
     )
 
-    val lineLayer = rememberLineCartesianLayer()
+    // Prepare chart data
+    val allPoints = data.flatMap { progressData ->
+        progressData.progressPoints.map { point ->
+            Triple(progressData.exerciseName, point, progressData.exerciseId)
+        }
+    }
 
-    CartesianChartHost(
-        chart = CartesianChart(
-            lineLayer
-        ),
-        modelProducer = modelProducer,
-        modifier = modifier.height(200.dp)
-    )
+    if (allPoints.isEmpty()) return
+
+    val maxWeight = allPoints.maxOfOrNull { it.second.weight } ?: 0.0
+    val minWeight = allPoints.minOfOrNull { it.second.weight } ?: 0.0
+    val weightRange = maxWeight - minWeight
+
+    // Get all unique labels in chronological order
+    val allLabels = allPoints.map { it.second.label }.distinct().sorted()
+
+    val leftMargin = 40.dp
+    val bottomMargin = 40.dp
+    val topMargin = 20.dp
+    val rightMargin = 20.dp
+
+    Canvas(
+        modifier = modifier
+            .padding(
+                start = leftMargin,
+                bottom = bottomMargin,
+                top = topMargin,
+                end = rightMargin
+            )
+            .pointerInput(data) {
+                detectTapGestures { offset ->
+                    val chartWidth = size.width
+                    val chartHeight = size.height
+
+                    if (chartWidth <= 0 || chartHeight <= 0) return@detectTapGestures
+
+                    val labelWidth = chartWidth / (allLabels.size - 1).coerceAtLeast(1)
+                    val clickThreshold = 40f // pixels - increased for easier clicking
+                    var pointClicked = false
+
+                    // Check each exercise line for clicked points
+                    data.forEachIndexed { exerciseIndex, progressData ->
+                        progressData.progressPoints.forEach { point ->
+                            val labelIndex = allLabels.indexOf(point.label)
+                            if (labelIndex != -1) {
+                                val x = labelIndex * labelWidth
+                                val y = if (weightRange > 0) {
+                                    chartHeight - ((point.weight - minWeight) / weightRange) * chartHeight
+                                } else {
+                                    chartHeight / 2
+                                }
+
+                                val distance = sqrt(
+                                    (offset.x - x).pow(2) + (offset.y - y.toFloat()).pow(2)
+                                )
+
+                                if (distance <= clickThreshold) {
+                                    onPointClick(
+                                        progressData.exerciseName,
+                                        point,
+                                        Offset(
+                                            x + leftMargin.toPx(),
+                                            y.toFloat() + topMargin.toPx()
+                                        )
+                                    )
+                                    pointClicked = true
+                                    return@detectTapGestures
+                                }
+                            }
+                        }
+                    }
+
+                    // If no point was clicked and there's an active marker, dismiss it
+                    if (!pointClicked) {
+                        onPointClick("", ProgressPoint(0L, 0.0, 0, ""), Offset.Zero)
+                    }
+                }
+            }
+    ) {
+        val chartWidth = size.width
+        val chartHeight = size.height
+
+        if (chartWidth <= 0 || chartHeight <= 0) return@Canvas
+
+        val labelWidth = if (allLabels.size > 1) chartWidth / (allLabels.size - 1) else 0f
+
+        // Draw grid lines and Y-axis labels
+        val guidelines = 5
+        for (i in 0..guidelines) {
+            val weight = minWeight + (weightRange * i / guidelines)
+            val y = chartHeight - (i.toFloat() / guidelines) * chartHeight
+
+            // Draw horizontal guideline
+            if (i > 0) {
+                drawLine(
+                    color = Color.Gray.copy(alpha = 0.3f),
+                    start = Offset(0f, y),
+                    end = Offset(chartWidth, y),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+        }
+
+        // Draw exercise lines
+        data.forEachIndexed { exerciseIndex, progressData ->
+            val exerciseColor = colors[exerciseIndex % colors.size]
+            val points = progressData.progressPoints
+
+            if (points.size > 1) {
+                // Draw line segments
+                for (i in 0 until points.size - 1) {
+                    val currentPoint = points[i]
+                    val nextPoint = points[i + 1]
+
+                    val currentLabelIndex = allLabels.indexOf(currentPoint.label)
+                    val nextLabelIndex = allLabels.indexOf(nextPoint.label)
+
+                    if (currentLabelIndex != -1 && nextLabelIndex != -1) {
+                        val startX = currentLabelIndex * labelWidth
+                        val startY = if (weightRange > 0) {
+                            chartHeight - ((currentPoint.weight - minWeight) / weightRange) * chartHeight
+                        } else {
+                            chartHeight / 2
+                        }
+
+                        val endX = nextLabelIndex * labelWidth
+                        val endY = if (weightRange > 0) {
+                            chartHeight - ((nextPoint.weight - minWeight) / weightRange) * chartHeight
+                        } else {
+                            chartHeight / 2
+                        }
+
+                        drawLine(
+                            color = exerciseColor,
+                            start = Offset(startX, startY.toFloat()),
+                            end = Offset(endX, endY.toFloat()),
+                            strokeWidth = 3.dp.toPx()
+                        )
+                    }
+                }
+            }
+
+            // Draw points
+            points.forEach { point ->
+                val labelIndex = allLabels.indexOf(point.label)
+                if (labelIndex != -1) {
+                    val x = labelIndex * labelWidth
+                    val y = if (weightRange > 0) {
+                        chartHeight - ((point.weight - minWeight) / weightRange) * chartHeight
+                    } else {
+                        chartHeight / 2
+                    }
+
+                    drawCircle(
+                        color = Color.White,
+                        radius = 8.dp.toPx(), // Increased from 6dp
+                        center = Offset(x, y.toFloat())
+                    )
+                    drawCircle(
+                        color = exerciseColor,
+                        radius = 6.dp.toPx(), // Increased from 4dp
+                        center = Offset(x, y.toFloat())
+                    )
+                }
+            }
+        }
+    }
+
+    // Draw axes and labels separately
+    Canvas(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        val chartWidth = size.width - leftMargin.toPx() - rightMargin.toPx()
+        val chartHeight = size.height - topMargin.toPx() - bottomMargin.toPx()
+        val leftMarginPx = leftMargin.toPx()
+        val topMarginPx = topMargin.toPx()
+        val bottomMarginPx = bottomMargin.toPx()
+
+        // Draw Y-axis labels
+        val guidelines = 5
+        for (i in 0..guidelines) {
+            val weight = minWeight + (weightRange * i / guidelines)
+            val y = topMarginPx + chartHeight - (i.toFloat() / guidelines) * chartHeight
+
+            drawContext.canvas.nativeCanvas.apply {
+                val paint = android.graphics.Paint().apply {
+                    textAlign = android.graphics.Paint.Align.RIGHT
+                    textSize = 10.sp.toPx()
+                    color = Color.Gray.toArgb()
+                    isAntiAlias = true
+                }
+
+                drawText(
+                    "${weight.toInt()} kg",
+                    leftMarginPx - 8.dp.toPx(),
+                    y + 4.dp.toPx(),
+                    paint
+                )
+            }
+        }
+
+        // Draw X-axis labels
+        val labelWidth = if (allLabels.size > 1) chartWidth / (allLabels.size - 1) else 0f
+
+        allLabels.forEachIndexed { index, label ->
+            val x = leftMarginPx + index * labelWidth
+
+            drawContext.canvas.nativeCanvas.apply {
+                val paint = android.graphics.Paint().apply {
+                    textAlign = android.graphics.Paint.Align.CENTER
+                    textSize = 12.sp.toPx()
+                    color = Color.Gray.toArgb()
+                    isAntiAlias = true
+                }
+
+                drawText(
+                    label,
+                    x,
+                    topMarginPx + chartHeight + 25.dp.toPx(),
+                    paint
+                )
+            }
+        }
+    }
 }
-
 @Composable
 fun SingleExerciseProgressChart(
     data: List<ProgressPoint>,

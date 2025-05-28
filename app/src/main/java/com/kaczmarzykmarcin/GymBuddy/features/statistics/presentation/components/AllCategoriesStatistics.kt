@@ -41,10 +41,9 @@ fun AllCategoriesStatistics(
         }
 
         // Workout Activity Chart
-        SectionTitle(title = stringResource(R.string.workout_activity))
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -64,10 +63,10 @@ fun AllCategoriesStatistics(
 
         // Category Distribution Chart
         if (categoryDistribution.isNotEmpty()) {
-            SectionTitle(title = stringResource(R.string.workout_distribution))
+
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

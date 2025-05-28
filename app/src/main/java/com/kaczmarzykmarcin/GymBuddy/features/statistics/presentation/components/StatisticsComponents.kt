@@ -347,6 +347,8 @@ fun PersonalRecordCard(
     }
 }
 
+// Add this to ChartComponents.kt file at the beginning, after imports
+
 @Composable
 fun ExerciseChipFilter(
     exerciseId: String,
@@ -363,7 +365,7 @@ fun ExerciseChipFilter(
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = Color.Black,
             selectedLabelColor = Color.White,
-            containerColor = LightGrayBackground,
+            containerColor = Color(0xFFF5F5F5), // LightGrayBackground equivalent
             labelColor = Color.Black
         ),
         shape = RoundedCornerShape(16.dp)

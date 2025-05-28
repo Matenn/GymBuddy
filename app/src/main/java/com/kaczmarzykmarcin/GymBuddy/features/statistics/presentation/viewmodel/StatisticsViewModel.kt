@@ -274,23 +274,36 @@ class StatisticsViewModel @Inject constructor(
 
     fun toggleExerciseForChart(exerciseId: String) {
         val currentSelected = _selectedExercisesForChart.value.toMutableSet()
+
         if (currentSelected.contains(exerciseId)) {
+            // Remove the exercise
             currentSelected.remove(exerciseId)
+
+            // If no exercises are selected, automatically select "All"
+            if (currentSelected.isEmpty()) {
+                _showAllExercisesInChart.value = true
+            }
         } else {
+            // Add the exercise
             currentSelected.add(exerciseId)
-            // If selecting specific exercises, uncheck "show all"
+
+            // If selecting specific exercises, uncheck "All"
             _showAllExercisesInChart.value = false
         }
+
         _selectedExercisesForChart.value = currentSelected
     }
 
     fun toggleShowAllExercisesInChart() {
         val newValue = !_showAllExercisesInChart.value
         _showAllExercisesInChart.value = newValue
+
         if (newValue) {
             // If showing all, clear specific selections
             _selectedExercisesForChart.value = emptySet()
         }
+        // Note: If user unchecks "All", we don't automatically select anything
+        // Let them manually select exercises they want to see
     }
 
     // STARE FUNKCJE - DEPRECATED (zachowane dla kompatybilności)
