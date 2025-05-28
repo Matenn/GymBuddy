@@ -58,6 +58,14 @@ class StatisticsViewModel @Inject constructor(
     private val _showAllExercisesInChart = MutableStateFlow(true)
     val showAllExercisesInChart = _showAllExercisesInChart.asStateFlow()
 
+    private val _selectedProgressMetric = MutableStateFlow(ProgressMetric.MAX_WEIGHT)
+    val selectedProgressMetric = _selectedProgressMetric.asStateFlow()
+
+    fun selectProgressMetric(metric: ProgressMetric) {
+        _selectedProgressMetric.value = metric
+    }
+
+
     // Computed statistics
     val filteredWorkouts = combine(
         allWorkouts,
@@ -71,6 +79,29 @@ class StatisticsViewModel @Inject constructor(
             timeFilteredWorkouts
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val progressData = combine(
+        filteredWorkouts,
+        selectedTimePeriod,
+        selectedProgressMetric,
+        selectedExercisesForChart,
+        showAllExercisesInChart
+    ) { workouts, timePeriod, metric, selectedExercises, showAll ->
+        Log.d(TAG, "Recalculating progress data: ${workouts.size} workouts, period: $timePeriod, metric: $metric")
+
+        val exerciseIds = if (showAll) {
+            workouts.flatMap { it.exercises }.map { it.exerciseId }.distinct()
+        } else {
+            selectedExercises.toList()
+        }
+
+        exerciseIds.mapNotNull { exerciseId ->
+            calculateExerciseProgressWithMetric(exerciseId, workouts, timePeriod, metric)
+        }.also { result ->
+            Log.d(TAG, "Progress data result: ${result.size} exercises")
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
 
     val basicStats = filteredWorkouts.map { workouts ->
         val totalWorkouts = workouts.size
@@ -312,6 +343,8 @@ class StatisticsViewModel @Inject constructor(
         return workoutActivity.value
     }
 
+
+
     @Deprecated("Use reactive categoryDistribution StateFlow instead")
     fun calculateCategoryDistribution(): List<CategoryDistribution> {
         return categoryDistribution.value
@@ -323,27 +356,17 @@ class StatisticsViewModel @Inject constructor(
     }
 
     // Calculate progress data for exercises
+
+    @Deprecated("Use reactive progressData StateFlow instead")
     fun calculateProgressData(): List<ProgressData> {
-        val workouts = filteredWorkouts.value
-        val timePeriod = selectedTimePeriod.value
-
-        val exerciseIds = if (showAllExercisesInChart.value) {
-            // Show all exercises in the filtered workouts
-            workouts.flatMap { it.exercises }.map { it.exerciseId }.distinct()
-        } else {
-            // Show only selected exercises
-            selectedExercisesForChart.value.toList()
-        }
-
-        return exerciseIds.mapNotNull { exerciseId ->
-            calculateExerciseProgress(exerciseId, workouts, timePeriod)
-        }
+        return progressData.value
     }
 
-    private fun calculateExerciseProgress(
+    private fun calculateExerciseProgressWithMetric(
         exerciseId: String,
         workouts: List<CompletedWorkout>,
-        timePeriod: TimePeriod
+        timePeriod: TimePeriod,
+        metric: ProgressMetric
     ): ProgressData? {
         val exerciseWorkouts = workouts
             .filter { workout -> workout.exercises.any { it.exerciseId == exerciseId } }
@@ -357,11 +380,11 @@ class StatisticsViewModel @Inject constructor(
             ?.name ?: "Unknown"
 
         val progressPoints = when (timePeriod) {
-            TimePeriod.WEEK -> calculateWeeklyProgressPoints(exerciseWorkouts, exerciseId)
-            TimePeriod.MONTH -> calculateMonthlyProgressPoints(exerciseWorkouts, exerciseId)
-            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPoints(exerciseWorkouts, exerciseId)
-            TimePeriod.YEAR -> calculateYearlyProgressPoints(exerciseWorkouts, exerciseId)
-            TimePeriod.ALL -> calculateAllTimeProgressPoints(exerciseWorkouts, exerciseId)
+            TimePeriod.WEEK -> calculateWeeklyProgressPointsForMetric(exerciseWorkouts, exerciseId, metric)
+            TimePeriod.MONTH -> calculateMonthlyProgressPointsForMetric(exerciseWorkouts, exerciseId, metric)
+            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPointsForMetric(exerciseWorkouts, exerciseId, metric)
+            TimePeriod.YEAR -> calculateYearlyProgressPointsForMetric(exerciseWorkouts, exerciseId, metric)
+            TimePeriod.ALL -> calculateAllTimeProgressPointsForMetric(exerciseWorkouts, exerciseId, metric)
         }
 
         return ProgressData(
@@ -369,6 +392,305 @@ class StatisticsViewModel @Inject constructor(
             exerciseName = exerciseName,
             progressPoints = progressPoints
         )
+    }
+
+    private fun calculateWeeklyProgressPointsForMetric(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String,
+        metric: ProgressMetric
+    ): List<ProgressPoint> {
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+
+            if (exerciseData != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
+
+                val (value, bestSet, tonnage) = when (metric) {
+                    ProgressMetric.MAX_WEIGHT -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(bestSet?.weight ?: 0.0, bestSet, 0.0)
+                    }
+                    ProgressMetric.ONE_RM -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculate1RM(it.weight, it.reps) }
+                        val oneRM = bestSet?.let { calculate1RM(it.weight, it.reps) } ?: 0.0
+                        Triple(oneRM, bestSet, 0.0)
+                    }
+                    ProgressMetric.VOLUME -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculateVolume(it.weight, it.reps) }
+                        val volume = bestSet?.let { calculateVolume(it.weight, it.reps) } ?: 0.0
+                        Triple(volume, bestSet, 0.0)
+                    }
+                    ProgressMetric.TONNAGE -> {
+                        val tonnage = calculateTonnage(exerciseData.sets)
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(tonnage, bestSet, tonnage)
+                    }
+                }
+
+                if (bestSet != null) {
+                    ProgressPoint(
+                        timestamp = workout.endTime.seconds,
+                        weight = value,
+                        reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
+                        label = getDayLabel(dayOfWeek),
+                        originalWeight = bestSet.weight,
+                        originalReps = bestSet.reps,
+                        volume = calculateVolume(bestSet.weight, bestSet.reps),
+                        tonnage = tonnage
+                    )
+                } else null
+            } else null
+        }.distinctBy { it.label }.sortedBy { it.timestamp }
+    }
+
+
+    private fun calculateAllTimeProgressPointsForMetric(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String,
+        metric: ProgressMetric
+    ): List<ProgressPoint> {
+        val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
+
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+
+            if (exerciseData != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val year = calendar.get(Calendar.YEAR)
+                val month = calendar.get(Calendar.MONTH)
+
+                val (value, bestSet, tonnage) = when (metric) {
+                    ProgressMetric.MAX_WEIGHT -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(bestSet?.weight ?: 0.0, bestSet, 0.0)
+                    }
+                    ProgressMetric.ONE_RM -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculate1RM(it.weight, it.reps) }
+                        val oneRM = bestSet?.let { calculate1RM(it.weight, it.reps) } ?: 0.0
+                        Triple(oneRM, bestSet, 0.0)
+                    }
+                    ProgressMetric.VOLUME -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculateVolume(it.weight, it.reps) }
+                        val volume = bestSet?.let { calculateVolume(it.weight, it.reps) } ?: 0.0
+                        Triple(volume, bestSet, 0.0)
+                    }
+                    ProgressMetric.TONNAGE -> {
+                        val tonnage = calculateTonnage(exerciseData.sets)
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(tonnage, bestSet, tonnage)
+                    }
+                }
+
+                if (bestSet != null) {
+                    ProgressPoint(
+                        timestamp = workout.endTime.seconds,
+                        weight = value,
+                        reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
+                        label = "${monthNames[month]} $year",
+                        originalWeight = bestSet.weight,
+                        originalReps = bestSet.reps,
+                        volume = calculateVolume(bestSet.weight, bestSet.reps),
+                        tonnage = tonnage
+                    )
+                } else null
+            } else null
+        }.groupBy { it.label }
+            .mapValues { entry ->
+                entry.value.maxByOrNull { point -> point.weight }
+            }
+            .values
+            .filterNotNull()
+            .sortedBy { it.timestamp }
+    }
+
+    private fun calculateMonthlyProgressPointsForMetric(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String,
+        metric: ProgressMetric
+    ): List<ProgressPoint> {
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+
+            if (exerciseData != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val weekOfMonth = calendar.get(Calendar.WEEK_OF_MONTH)
+
+                val (value, bestSet, tonnage) = when (metric) {
+                    ProgressMetric.MAX_WEIGHT -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(bestSet?.weight ?: 0.0, bestSet, 0.0)
+                    }
+                    ProgressMetric.ONE_RM -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculate1RM(it.weight, it.reps) }
+                        val oneRM = bestSet?.let { calculate1RM(it.weight, it.reps) } ?: 0.0
+                        Triple(oneRM, bestSet, 0.0)
+                    }
+                    ProgressMetric.VOLUME -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculateVolume(it.weight, it.reps) }
+                        val volume = bestSet?.let { calculateVolume(it.weight, it.reps) } ?: 0.0
+                        Triple(volume, bestSet, 0.0)
+                    }
+                    ProgressMetric.TONNAGE -> {
+                        val tonnage = calculateTonnage(exerciseData.sets)
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(tonnage, bestSet, tonnage)
+                    }
+                }
+
+                if (bestSet != null) {
+                    ProgressPoint(
+                        timestamp = workout.endTime.seconds,
+                        weight = value,
+                        reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
+                        label = "Tydz. $weekOfMonth",
+                        originalWeight = bestSet.weight,
+                        originalReps = bestSet.reps,
+                        volume = calculateVolume(bestSet.weight, bestSet.reps),
+                        tonnage = tonnage
+                    )
+                } else null
+            } else null
+        }.groupBy { it.label }
+            .mapValues { entry ->
+                // Dla każdego tygodnia, wybierz najlepszy wynik według wybranej metryki
+                entry.value.maxByOrNull { point -> point.weight }
+            }
+            .values
+            .filterNotNull()
+            .sortedBy { it.timestamp }
+    }
+
+    private fun calculateThreeMonthsProgressPointsForMetric(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String,
+        metric: ProgressMetric
+    ): List<ProgressPoint> {
+        val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
+
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+
+            if (exerciseData != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val month = calendar.get(Calendar.MONTH)
+
+                val (value, bestSet, tonnage) = when (metric) {
+                    ProgressMetric.MAX_WEIGHT -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(bestSet?.weight ?: 0.0, bestSet, 0.0)
+                    }
+                    ProgressMetric.ONE_RM -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculate1RM(it.weight, it.reps) }
+                        val oneRM = bestSet?.let { calculate1RM(it.weight, it.reps) } ?: 0.0
+                        Triple(oneRM, bestSet, 0.0)
+                    }
+                    ProgressMetric.VOLUME -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculateVolume(it.weight, it.reps) }
+                        val volume = bestSet?.let { calculateVolume(it.weight, it.reps) } ?: 0.0
+                        Triple(volume, bestSet, 0.0)
+                    }
+                    ProgressMetric.TONNAGE -> {
+                        val tonnage = calculateTonnage(exerciseData.sets)
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(tonnage, bestSet, tonnage)
+                    }
+                }
+
+                if (bestSet != null) {
+                    ProgressPoint(
+                        timestamp = workout.endTime.seconds,
+                        weight = value,
+                        reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
+                        label = monthNames[month],
+                        originalWeight = bestSet.weight,
+                        originalReps = bestSet.reps,
+                        volume = calculateVolume(bestSet.weight, bestSet.reps),
+                        tonnage = tonnage
+                    )
+                } else null
+            } else null
+        }.groupBy { it.label }
+            .mapValues { entry ->
+                // Dla każdego miesiąca, wybierz najlepszy wynik według wybranej metryki
+                entry.value.maxByOrNull { point -> point.weight }
+            }
+            .values
+            .filterNotNull()
+            .sortedBy { it.timestamp }
+    }
+
+    private fun calculateYearlyProgressPointsForMetric(
+        workouts: List<CompletedWorkout>,
+        exerciseId: String,
+        metric: ProgressMetric
+    ): List<ProgressPoint> {
+        val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
+
+        return workouts.mapNotNull { workout ->
+            val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
+
+            if (exerciseData != null && workout.endTime != null) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = workout.endTime.seconds * 1000
+                val month = calendar.get(Calendar.MONTH)
+
+                val (value, bestSet, tonnage) = when (metric) {
+                    ProgressMetric.MAX_WEIGHT -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(bestSet?.weight ?: 0.0, bestSet, 0.0)
+                    }
+                    ProgressMetric.ONE_RM -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculate1RM(it.weight, it.reps) }
+                        val oneRM = bestSet?.let { calculate1RM(it.weight, it.reps) } ?: 0.0
+                        Triple(oneRM, bestSet, 0.0)
+                    }
+                    ProgressMetric.VOLUME -> {
+                        val bestSet = exerciseData.sets.maxByOrNull { calculateVolume(it.weight, it.reps) }
+                        val volume = bestSet?.let { calculateVolume(it.weight, it.reps) } ?: 0.0
+                        Triple(volume, bestSet, 0.0)
+                    }
+                    ProgressMetric.TONNAGE -> {
+                        val tonnage = calculateTonnage(exerciseData.sets)
+                        val bestSet = exerciseData.sets.maxByOrNull { it.weight }
+                        Triple(tonnage, bestSet, tonnage)
+                    }
+                }
+
+                if (bestSet != null) {
+                    ProgressPoint(
+                        timestamp = workout.endTime.seconds,
+                        weight = value,
+                        reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
+                        label = monthNames[month],
+                        originalWeight = bestSet.weight,
+                        originalReps = bestSet.reps,
+                        volume = calculateVolume(bestSet.weight, bestSet.reps),
+                        tonnage = tonnage
+                    )
+                } else null
+            } else null
+        }.groupBy { it.label }
+            .mapValues { entry ->
+                // Dla każdego miesiąca w roku, wybierz najlepszy wynik według wybranej metryki
+                entry.value.maxByOrNull { point -> point.weight }
+            }
+            .values
+            .filterNotNull()
+            .sortedBy { it.timestamp }
+    }
+
+    private fun calculateExerciseProgress(
+        exerciseId: String,
+        workouts: List<CompletedWorkout>,
+        timePeriod: TimePeriod,
+        metric: ProgressMetric = selectedProgressMetric.value
+    ): ProgressData? {
+        return calculateExerciseProgressWithMetric(exerciseId, workouts, timePeriod, metric)
     }
 
     private fun calculateAllTimeProgressPoints(
@@ -422,6 +744,7 @@ class StatisticsViewModel @Inject constructor(
 
         if (allSets.isEmpty()) return null
 
+        // Podstawowe statystyki
         val personalBest = allSets.maxByOrNull { it.weight }
         val averageWeight = allSets.map { it.weight }.average()
         val averageReps = allSets.map { it.reps }.average()
@@ -429,12 +752,30 @@ class StatisticsViewModel @Inject constructor(
             workout.exercises.filter { it.exerciseId == exercise.id }.sumOf { it.sets.size }
         }.average()
 
+        // Oblicz statystyki dla różnych metryk
+        val personalBest1RM = allSets.maxOfOrNull { calculate1RM(it.weight, it.reps) } ?: 0.0
+        val average1RM = allSets.map { calculate1RM(it.weight, it.reps) }.average()
+
+        val personalBestVolume = allSets.maxOfOrNull { calculateVolume(it.weight, it.reps) } ?: 0.0
+        val averageVolume = allSets.map { calculateVolume(it.weight, it.reps) }.average()
+
+        // Oblicz tonaż na trening
+        val workoutTonnages = exerciseWorkouts.map { workout ->
+            val exerciseSets = workout.exercises
+                .filter { it.exerciseId == exercise.id }
+                .flatMap { it.sets }
+            calculateTonnage(exerciseSets)
+        }
+        val personalBestTonnage = workoutTonnages.maxOrNull() ?: 0.0
+        val averageTonnage = if (workoutTonnages.isNotEmpty()) workoutTonnages.average() else 0.0
+
+        // Oblicz progress points dla wybranej metryki
         val progressPoints = when (timePeriod) {
-            TimePeriod.WEEK -> calculateWeeklyProgressPoints(exerciseWorkouts, exercise.id)
-            TimePeriod.MONTH -> calculateMonthlyProgressPoints(exerciseWorkouts, exercise.id)
-            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPoints(exerciseWorkouts, exercise.id)
-            TimePeriod.YEAR -> calculateYearlyProgressPoints(exerciseWorkouts, exercise.id)
-            TimePeriod.ALL -> calculateAllTimeProgressPoints(exerciseWorkouts, exercise.id)
+            TimePeriod.WEEK -> calculateWeeklyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
+            TimePeriod.MONTH -> calculateMonthlyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
+            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
+            TimePeriod.YEAR -> calculateYearlyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
+            TimePeriod.ALL -> calculateAllTimeProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
         }
 
         return ExerciseStatisticsData(
@@ -442,12 +783,19 @@ class StatisticsViewModel @Inject constructor(
             exerciseName = exercise.name,
             personalBestWeight = personalBest?.weight ?: 0.0,
             personalBestReps = personalBest?.reps ?: 0,
+            personalBest1RM = personalBest1RM,
+            personalBestVolume = personalBestVolume,
+            personalBestTonnage = personalBestTonnage,
             averageWeight = averageWeight,
             averageReps = averageReps.toInt(),
+            average1RM = average1RM,
+            averageVolume = averageVolume,
+            averageTonnage = averageTonnage,
             averageSets = averageSets,
             progressPoints = progressPoints
         )
     }
+
 
     private fun filterWorkoutsByTimePeriod(
         workouts: List<CompletedWorkout>,
@@ -726,6 +1074,35 @@ class StatisticsViewModel @Inject constructor(
             .values
             .filterNotNull()
             .sortedBy { it.timestamp }
+    }
+
+    /**
+     * Oblicza teoretyczne 1RM używając wzoru Brzycki
+     */
+    private fun calculate1RM(weight: Double, reps: Int): Double {
+        return if (reps == 1) {
+            weight
+        } else if (reps > 10) {
+            weight / (1.0278 - (0.0278 * 10)) // Limitujemy do 10 reps
+        } else {
+            weight / (1.0278 - (0.0278 * reps))
+        }
+    }
+
+    /**
+     * Oblicza objętość (waga × reps)
+     */
+    private fun calculateVolume(weight: Double, reps: Int): Double {
+        return weight * reps
+    }
+
+    /**
+     * Oblicza tonaż dla całego treningu dla danego ćwiczenia
+     */
+    private fun calculateTonnage(exerciseSets: List<ExerciseSet>): Double {
+        return exerciseSets.sumOf { set ->
+            (set.weight * set.reps).toDouble()
+        }
     }
 
     private fun getDayLabel(dayOfWeek: Int): String {

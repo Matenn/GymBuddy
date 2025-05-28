@@ -19,11 +19,13 @@ fun CategoryStatistics(
     modifier: Modifier = Modifier
 ) {
     val basicStats by viewModel.basicStats.collectAsState()
-    val progressData = viewModel.calculateProgressData()
+    // ZMIANA: używamy reaktywnego StateFlow zamiast funkcji
+    val progressData by viewModel.progressData.collectAsState()
     val exerciseDistribution by viewModel.exerciseDistribution.collectAsState()
     val selectedExercisesForChart by viewModel.selectedExercisesForChart.collectAsState()
     val showAllExercisesInChart by viewModel.showAllExercisesInChart.collectAsState()
     val filteredWorkouts by viewModel.filteredWorkouts.collectAsState()
+    val selectedProgressMetric by viewModel.selectedProgressMetric.collectAsState()
 
     // Get all unique exercises from filtered workouts
     val availableExercises = remember(filteredWorkouts) {
@@ -57,21 +59,23 @@ fun CategoryStatistics(
 
         // Progress Chart Section with all elements in one card
         ProgressLineChart(
-            data = progressData,
+            data = progressData, // ZMIANA: używamy reaktywnego StateFlow
             selectedExercisesForChart = selectedExercisesForChart,
             showAllExercisesInChart = showAllExercisesInChart,
             availableExercises = availableExercises,
             onToggleExerciseForChart = viewModel::toggleExerciseForChart,
             onToggleShowAllExercisesInChart = viewModel::toggleShowAllExercisesInChart,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            selectedMetric = selectedProgressMetric,
+            onMetricSelected = viewModel::selectProgressMetric,
         )
 
         // Exercise Distribution Chart
         if (exerciseDistribution.isNotEmpty()) {
-            SectionTitle(title = stringResource(R.string.exercise_distribution))
+
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

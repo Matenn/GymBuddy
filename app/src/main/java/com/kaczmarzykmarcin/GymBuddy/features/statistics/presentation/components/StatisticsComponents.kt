@@ -303,7 +303,8 @@ fun StatCard(
 @Composable
 fun PersonalRecordCard(
     weight: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.personal_record),
 ) {
     Card(
         modifier = modifier,
@@ -331,7 +332,7 @@ fun PersonalRecordCard(
 
             Column {
                 Text(
-                    text = stringResource(R.string.personal_record),
+                    text = title,
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray
                 )

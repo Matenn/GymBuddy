@@ -70,6 +70,16 @@ import com.kaczmarzykmarcin.GymBuddy.R
 import ir.ehsannarmani.compose_charts.models.BarProperties
 import ir.ehsannarmani.compose_charts.models.HorizontalIndicatorProperties
 import ir.ehsannarmani.compose_charts.models.LabelProperties
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.draw.alpha
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+
 
 @Composable
 fun ActivityBarChart(
@@ -403,6 +413,8 @@ fun ProgressLineChart(
     availableExercises: Map<String, String>,
     onToggleExerciseForChart: (String) -> Unit,
     onToggleShowAllExercisesInChart: () -> Unit,
+    selectedMetric: ProgressMetric,
+    onMetricSelected: (ProgressMetric) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (availableExercises.isEmpty()) {
@@ -448,15 +460,26 @@ fun ProgressLineChart(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Title
-            Text(
-                text = "Progres obciążeń (kg)",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                ),
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            // Title with options menu
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Progres - ${selectedMetric.displayName}",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+
+                ProgressMetricMenu(
+                    selectedMetric = selectedMetric,
+                    onMetricSelected = onMetricSelected
+                )
+            }
+
 
             // Exercise filter chips
             LazyRow(
@@ -504,14 +527,14 @@ fun ProgressLineChart(
                 } else {
                     ProgressLineChartCanvas(
                         data = filteredData,
+                        selectedMetric = selectedMetric, // Dodaj ten parametr
                         onPointClick = { exerciseName, point, position ->
                             if (exerciseName.isEmpty()) {
-                                // Empty exerciseName means click in empty area - hide marker
                                 selectedPointInfo = null
                             } else {
                                 selectedPointInfo = if (selectedPointInfo?.first == exerciseName &&
                                     selectedPointInfo?.second == point) {
-                                    null // Deselect if same point clicked
+                                    null
                                 } else {
                                     exerciseName to point
                                 }
@@ -520,6 +543,7 @@ fun ProgressLineChart(
                         },
                         modifier = Modifier.fillMaxSize()
                     )
+
                 }
 
                 // Marker popup
@@ -556,8 +580,17 @@ fun ProgressLineChart(
                                     color = Color.Gray
                                 )
                             )
+
+                            // Wyświetl odpowiednią wartość w zależności od metryki
+                            val displayValue = when (selectedMetric) {
+                                ProgressMetric.MAX_WEIGHT -> "${point.weight.toInt()} kg"
+                                ProgressMetric.ONE_RM -> point.oneRMFormatted
+                                ProgressMetric.VOLUME -> point.volumeFormatted
+                                ProgressMetric.TONNAGE -> point.tonnageFormatted
+                            }
+
                             Text(
-                                text = "${point.weight.toInt()} kg",
+                                text = displayValue,
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
@@ -595,6 +628,7 @@ fun ProgressLineChart(
 @Composable
 private fun ProgressLineChartCanvas(
     data: List<ProgressData>,
+    selectedMetric: ProgressMetric, // Nowy parametr
     onPointClick: (String, ProgressPoint, Offset) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -787,12 +821,11 @@ private fun ProgressLineChartCanvas(
         val chartHeight = size.height - topMargin.toPx() - bottomMargin.toPx()
         val leftMarginPx = leftMargin.toPx()
         val topMarginPx = topMargin.toPx()
-        val bottomMarginPx = bottomMargin.toPx()
 
-        // Draw Y-axis labels
+        // Draw Y-axis labels z odpowiednią jednostką
         val guidelines = 5
         for (i in 0..guidelines) {
-            val weight = minWeight + (weightRange * i / guidelines)
+            val value = minWeight + (weightRange * i / guidelines)
             val y = topMarginPx + chartHeight - (i.toFloat() / guidelines) * chartHeight
 
             drawContext.canvas.nativeCanvas.apply {
@@ -803,8 +836,15 @@ private fun ProgressLineChartCanvas(
                     isAntiAlias = true
                 }
 
+                // Format wartości w zależności od metryki
+                val formattedValue = when (selectedMetric) {
+                    ProgressMetric.MAX_WEIGHT, ProgressMetric.ONE_RM -> "${value.toInt()} kg"
+                    ProgressMetric.VOLUME -> "${value.toInt()}"
+                    ProgressMetric.TONNAGE -> "${value.toInt()} kg"
+                }
+
                 drawText(
-                    "${weight.toInt()} kg",
+                    formattedValue,
                     leftMarginPx - 8.dp.toPx(),
                     y + 4.dp.toPx(),
                     paint
@@ -812,7 +852,7 @@ private fun ProgressLineChartCanvas(
             }
         }
 
-        // Draw X-axis labels
+        // Draw X-axis labels (pozostaje bez zmian)
         val labelWidth = if (allLabels.size > 1) chartWidth / (allLabels.size - 1) else 0f
 
         allLabels.forEachIndexed { index, label ->
@@ -891,6 +931,26 @@ fun CategoryPieChart(
     var selectedSegmentIndex by remember { mutableStateOf(-1) }
     var markerPosition by remember { mutableStateOf(Offset.Zero) }
 
+    // Stan dla LazyColumn
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope() // Add this
+
+    // Sprawdzanie czy można scrollować
+    val canScrollUp by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+
+    val canScrollDown by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { lastItem ->
+                lastItem.index < listState.layoutInfo.totalItemsCount - 1 ||
+                        lastItem.offset + lastItem.size > listState.layoutInfo.viewportEndOffset
+            } ?: false
+        }
+    }
+
     Column(modifier = modifier) {
         // Title
         Text(
@@ -959,6 +1019,11 @@ fun CategoryPieChart(
                                                     x = center.x + cos(markerAngleRad).toFloat() * markerRadius,
                                                     y = center.y + sin(markerAngleRad).toFloat() * markerRadius
                                                 )
+
+                                                // Auto-scroll to selected item in legend
+                                                coroutineScope.launch {
+                                                    listState.animateScrollToItem(selectedSegmentIndex)
+                                                }
                                             }
                                             break
                                         }
@@ -1035,7 +1100,7 @@ fun CategoryPieChart(
                     }
                 }
 
-                // Marker popup
+                // Marker popup - remains unchanged
                 if (selectedSegmentIndex != -1 && selectedSegmentIndex < data.size) {
                     val selectedData = data[selectedSegmentIndex]
 
@@ -1098,19 +1163,12 @@ fun CategoryPieChart(
                 }
             }
 
-            // Legend
-            Column(
+            // Legend z wskazówkami scrollowania
+            Box(
                 modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = "Legenda",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxHeight(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -1190,6 +1248,114 @@ fun CategoryPieChart(
                         }
                     }
                 }
+
+                // Wskazówka przewijania w górę
+                if (canScrollUp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.9f),
+                                        Color.White.copy(alpha = 0.7f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Przewiń w górę",
+                            tint = Color.Gray,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .alpha(0.7f)
+                        )
+                    }
+                }
+
+                // Wskazówka przewijania w dół
+                if (canScrollDown) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.7f),
+                                        Color.White.copy(alpha = 0.9f)
+                                    )
+                                )
+                            )
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Przewiń w dół",
+                            tint = Color.Gray,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .alpha(0.7f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProgressMetricMenu(
+    selectedMetric: ProgressMetric,
+    onMetricSelected: (ProgressMetric) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        IconButton(
+            onClick = { expanded = true }
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Opcje metryki",
+                tint = Color.Gray
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            ProgressMetric.values().forEach { metric ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = metric.displayName,
+                            fontWeight = if (metric == selectedMetric) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    onClick = {
+                        onMetricSelected(metric)
+                        expanded = false
+                    },
+                    leadingIcon = if (metric == selectedMetric) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else null
+                )
             }
         }
     }
@@ -1200,80 +1366,394 @@ fun ExercisePieChart(
     data: List<ExerciseDistribution>,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        // Simple pie chart implementation using Canvas
-        val total = data.sumOf { it.percentage }
-
-        Canvas(
-            modifier = Modifier
-                .size(200.dp)
-                .padding(16.dp)
+    if (data.isEmpty()) {
+        Box(
+            modifier = modifier.height(200.dp),
+            contentAlignment = Alignment.Center
         ) {
-            val center = Offset(size.width / 2, size.height / 2)
-            val radius = minOf(size.width, size.height) / 2
-
-            var startAngle = 0f
-
-            val colors = listOf(
-                Color(0xFF1976D2),
-                Color(0xFF388E3C),
-                Color(0xFFF57C00),
-                Color(0xFFD32F2F),
-                Color(0xFF7B1FA2),
-                Color(0xFF607D8B)
-            )
-
-            data.forEachIndexed { index, exercise ->
-                val sweepAngle = (exercise.percentage / total) * 360f
-                val color = colors[index % colors.size]
-
-                drawArc(
-                    color = color,
-                    startAngle = startAngle,
-                    sweepAngle = sweepAngle,
-                    useCenter = true,
-                    topLeft = Offset(center.x - radius, center.y - radius),
-                    size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2)
-                )
-
-                startAngle += sweepAngle
-            }
+            Text("Brak danych do wyświetlenia")
         }
+        return
+    }
 
-        // Legend
-        LazyColumn(
-            modifier = Modifier.height(120.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    var selectedSegmentIndex by remember { mutableStateOf(-1) }
+    var markerPosition by remember { mutableStateOf(Offset.Zero) }
+
+    // Stan dla LazyColumn
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope() // Add this
+
+    // Sprawdzanie czy można scrollować
+    val canScrollUp by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+
+    val canScrollDown by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.let { lastItem ->
+                lastItem.index < listState.layoutInfo.totalItemsCount - 1 ||
+                        lastItem.offset + lastItem.size > listState.layoutInfo.viewportEndOffset
+            } ?: false
+        }
+    }
+
+    Column(modifier = modifier) {
+        // Title
+        Text(
+            text = "Rozkład ćwiczeń (sety)",
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            ),
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(data) { exercise ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+            // Pie Chart
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(
+                    modifier = Modifier
+                        .size(200.dp)
+                        .pointerInput(data) {
+                            detectTapGestures { offset ->
+                                val center = Offset(size.width / 2f, size.height / 2f)
+                                val radius = minOf(size.width, size.height) / 2f * 0.8f
+
+                                // Calculate distance from center
+                                val distance = sqrt(
+                                    (offset.x - center.x).pow(2) + (offset.y - center.y).pow(2)
+                                )
+
+                                // Check if click is within the pie chart
+                                if (distance <= radius) {
+                                    // Calculate angle of click relative to center
+                                    val angle = atan2(
+                                        offset.y - center.y,
+                                        offset.x - center.x
+                                    ).let {
+                                        // Convert to degrees and normalize to 0-360
+                                        var degrees = Math.toDegrees(it.toDouble()).toFloat()
+                                        if (degrees < 0) degrees += 360f
+                                        // Adjust for starting angle (-90 degrees)
+                                        degrees = (degrees + 90f) % 360f
+                                        degrees
+                                    }
+
+                                    // Find which segment was clicked
+                                    var currentAngle = 0f
+                                    val total = data.sumOf { it.percentage }
+
+                                    for (i in data.indices) {
+                                        val segmentAngle = (data[i].percentage.toFloat() / total) * 360f
+
+                                        if (angle >= currentAngle && angle < currentAngle + segmentAngle) {
+                                            selectedSegmentIndex = if (selectedSegmentIndex == i) -1 else i
+
+                                            if (selectedSegmentIndex != -1) {
+                                                // Calculate marker position at the middle of the segment
+                                                val middleAngle = currentAngle + segmentAngle / 2f
+                                                val markerRadius = radius * 0.7f
+                                                val markerAngleRad = Math.toRadians((middleAngle - 90f).toDouble())
+
+                                                markerPosition = Offset(
+                                                    x = center.x + cos(markerAngleRad).toFloat() * markerRadius,
+                                                    y = center.y + sin(markerAngleRad).toFloat() * markerRadius
+                                                )
+
+                                                // Auto-scroll to selected item in legend
+                                                coroutineScope.launch {
+                                                    listState.animateScrollToItem(selectedSegmentIndex)
+                                                }
+                                            }
+                                            break
+                                        }
+                                        currentAngle += segmentAngle
+                                    }
+                                }
+                            }
+                        }
                 ) {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val radius = minOf(size.width, size.height) / 2f * 0.8f
+                    val total = data.sumOf { it.percentage }
+
+                    var startAngle = -90f // Start from top
+
                     val colors = listOf(
                         Color(0xFF1976D2),
                         Color(0xFF388E3C),
                         Color(0xFFF57C00),
                         Color(0xFFD32F2F),
                         Color(0xFF7B1FA2),
-                        Color(0xFF607D8B)
+                        Color(0xFF607D8B),
+                        Color(0xFFE91E63),
+                        Color(0xFF00BCD4),
+                        Color(0xFF795548),
+                        Color(0xFF9C27B0)
                     )
 
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .background(
-                                colors[data.indexOf(exercise) % colors.size],
-                                CircleShape
+                    data.forEachIndexed { index, exercise ->
+                        val sweepAngle = (exercise.percentage.toFloat() / total) * 360f
+
+                        val baseColor = colors[index % colors.size]
+
+                        // Apply selection effect
+                        val segmentColor = if (selectedSegmentIndex == index) {
+                            baseColor.copy(alpha = 0.7f) // Lighter when selected
+                        } else {
+                            baseColor
+                        }
+
+                        // Calculate segment radius (expand selected segment)
+                        val segmentRadius = if (selectedSegmentIndex == index) {
+                            radius * 1.1f
+                        } else {
+                            radius
+                        }
+
+                        // Calculate offset for selected segment (push it outward)
+                        val segmentCenter = if (selectedSegmentIndex == index) {
+                            val midAngle = startAngle + sweepAngle / 2f
+                            val offsetDistance = radius * 0.1f
+                            val angleRad = Math.toRadians(midAngle.toDouble())
+                            Offset(
+                                x = center.x + cos(angleRad).toFloat() * offsetDistance,
+                                y = center.y + sin(angleRad).toFloat() * offsetDistance
                             )
-                    )
+                        } else {
+                            center
+                        }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                        drawArc(
+                            color = segmentColor,
+                            startAngle = startAngle,
+                            sweepAngle = sweepAngle,
+                            useCenter = true,
+                            topLeft = Offset(
+                                segmentCenter.x - segmentRadius,
+                                segmentCenter.y - segmentRadius
+                            ),
+                            size = Size(segmentRadius * 2, segmentRadius * 2)
+                        )
 
-                    Text(
-                        text = "${exercise.exerciseName} (${exercise.percentage}%)",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                        startAngle += sweepAngle
+                    }
+                }
+
+                // Marker popup - remains unchanged
+                if (selectedSegmentIndex != -1 && selectedSegmentIndex < data.size) {
+                    val selectedData = data[selectedSegmentIndex]
+
+                    Card(
+                        modifier = Modifier
+                            .offset(
+                                x = with(LocalDensity.current) { markerPosition.x.toDp() - 100.dp },
+                                y = with(LocalDensity.current) { markerPosition.y.toDp() - 60.dp }
+                            )
+                            .wrapContentSize(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = selectedData.exerciseName,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                            Text(
+                                text = "${selectedData.setCount} setów",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "${selectedData.percentage}%",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+
+                    // Triangle pointer
+                    Canvas(
+                        modifier = Modifier
+                            .offset(
+                                x = with(LocalDensity.current) { markerPosition.x.toDp() - 6.dp },
+                                y = with(LocalDensity.current) { markerPosition.y.toDp() - 12.dp }
+                            )
+                            .size(12.dp)
+                    ) {
+                        val path = androidx.compose.ui.graphics.Path().apply {
+                            moveTo(size.width / 2, size.height)
+                            lineTo(0f, 0f)
+                            lineTo(size.width, 0f)
+                            close()
+                        }
+                        drawPath(
+                            path = path,
+                            color = surfaceColor
+                        )
+                    }
+                }
+            }
+
+            // Legend z wskazówkami scrollowania
+            Box(
+                modifier = Modifier.weight(1f)
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(data.size) { index ->
+                        val exercise = data[index]
+                        val colors = listOf(
+                            Color(0xFF1976D2),
+                            Color(0xFF388E3C),
+                            Color(0xFFF57C00),
+                            Color(0xFFD32F2F),
+                            Color(0xFF7B1FA2),
+                            Color(0xFF607D8B),
+                            Color(0xFFE91E63),
+                            Color(0xFF00BCD4),
+                            Color(0xFF795548),
+                            Color(0xFF9C27B0)
+                        )
+
+                        val color = colors[index % colors.size]
+                        val isSelected = selectedSegmentIndex == index
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedSegmentIndex = if (selectedSegmentIndex == index) -1 else index
+
+                                    if (selectedSegmentIndex != -1) {
+                                        // Calculate marker position for legend click
+                                        val total = data.sumOf { it.percentage }
+                                        var currentAngle = -90f
+
+                                        for (i in 0 until index) {
+                                            currentAngle += (data[i].percentage.toFloat() / total) * 360f
+                                        }
+
+                                        val segmentAngle = (exercise.percentage.toFloat() / total) * 360f
+                                        val middleAngle = currentAngle + segmentAngle / 2f
+                                        val markerRadius = 80f // Approximate radius for 200.dp size
+                                        val angleRad = Math.toRadians(middleAngle.toDouble())
+
+                                        markerPosition = Offset(
+                                            x = 100f + cos(angleRad).toFloat() * markerRadius * 0.7f, // 100f = center of 200dp
+                                            y = 100f + sin(angleRad).toFloat() * markerRadius * 0.7f
+                                        )
+                                    }
+                                }
+                                .background(
+                                    if (isSelected) Color.Gray.copy(alpha = 0.2f) else Color.Transparent,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .background(color, CircleShape)
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = exercise.exerciseName,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                )
+                                Text(
+                                    text = "${exercise.setCount} setów • ${exercise.percentage}%",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Color.Gray
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Wskazówka przewijania w górę
+                if (canScrollUp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.9f),
+                                        Color.White.copy(alpha = 0.7f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Przewiń w górę",
+                            tint = Color.Gray,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .alpha(0.7f)
+                        )
+                    }
+                }
+
+                // Wskazówka przewijania w dół
+                if (canScrollDown) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.White.copy(alpha = 0.7f),
+                                        Color.White.copy(alpha = 0.9f)
+                                    )
+                                )
+                            )
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Przewiń w dół",
+                            tint = Color.Gray,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .alpha(0.7f)
+                        )
+                    }
                 }
             }
         }
