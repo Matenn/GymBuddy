@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
-import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.ExerciseSelectionBottomSheet
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.SingleExerciseSelectionBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.StatType
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.TimePeriod
 import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
@@ -239,25 +239,10 @@ fun ExerciseSelector(
     }
 
     if (showExerciseSelection) {
-        ExerciseSelectionBottomSheet(
+        SingleExerciseSelectionBottomSheet(
             onDismiss = { showExerciseSelection = false },
-            onExercisesSelected = { exercises ->
-                if (exercises.isNotEmpty()) {
-                    // Convert first exercise to Exercise model
-                    val exercise = Exercise(
-                        id = exercises.first().id, // Fixed: changed from exerciseId to id
-                        name = exercises.first().name,
-                        category = exercises.first().category,
-                        primaryMuscles = emptyList(),
-                        secondaryMuscles = emptyList(),
-                        instructions = emptyList(),
-                        equipment = "",
-                        // Removed: difficulty parameter (not present in Exercise model)
-                        force = "",
-                        mechanic = ""
-                    )
-                    onExerciseSelected(exercise)
-                }
+            onExerciseSelected = { exercise ->
+                onExerciseSelected(exercise)
                 showExerciseSelection = false
             }
         )
@@ -347,8 +332,6 @@ fun PersonalRecordCard(
         }
     }
 }
-
-// Add this to ChartComponents.kt file at the beginning, after imports
 
 @Composable
 fun ExerciseChipFilter(
