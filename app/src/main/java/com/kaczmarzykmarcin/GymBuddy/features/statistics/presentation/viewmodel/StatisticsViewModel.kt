@@ -229,10 +229,11 @@ class StatisticsViewModel @Inject constructor(
     val exerciseStatistics = combine(
         selectedExercise,
         allWorkouts,
-        selectedTimePeriod
-    ) { exercise, workouts, timePeriod ->
+        selectedTimePeriod,
+        selectedProgressMetric // DODAJ TEN PARAMETR!
+    ) { exercise, workouts, timePeriod, metric ->
         if (exercise != null) {
-            calculateExerciseStatistics(exercise, workouts, timePeriod)
+            calculateExerciseStatistics(exercise, workouts, timePeriod, metric) // PRZEKAŻ METRYKĘ
         } else {
             null
         }
@@ -432,7 +433,7 @@ class StatisticsViewModel @Inject constructor(
                 if (bestSet != null) {
                     ProgressPoint(
                         timestamp = workout.endTime.seconds,
-                        weight = value,
+                        weight = value, // GŁÓWNA WARTOŚĆ WEDŁUG WYBRANEJ METRYKI
                         reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
                         label = getDayLabel(dayOfWeek),
                         originalWeight = bestSet.weight,
@@ -444,6 +445,7 @@ class StatisticsViewModel @Inject constructor(
             } else null
         }.distinctBy { it.label }.sortedBy { it.timestamp }
     }
+
 
 
     private fun calculateAllTimeProgressPointsForMetric(
@@ -544,7 +546,7 @@ class StatisticsViewModel @Inject constructor(
                 if (bestSet != null) {
                     ProgressPoint(
                         timestamp = workout.endTime.seconds,
-                        weight = value,
+                        weight = value, // WARTOŚĆ WEDŁUG WYBRANEJ METRYKI
                         reps = if (metric == ProgressMetric.ONE_RM) 1 else bestSet.reps,
                         label = "Tydz. $weekOfMonth",
                         originalWeight = bestSet.weight,
@@ -556,7 +558,7 @@ class StatisticsViewModel @Inject constructor(
             } else null
         }.groupBy { it.label }
             .mapValues { entry ->
-                // Dla każdego tygodnia, wybierz najlepszy wynik według wybranej metryki
+                // Wybierz najlepszy wynik według wybranej metryki
                 entry.value.maxByOrNull { point -> point.weight }
             }
             .values
@@ -616,7 +618,6 @@ class StatisticsViewModel @Inject constructor(
             } else null
         }.groupBy { it.label }
             .mapValues { entry ->
-                // Dla każdego miesiąca, wybierz najlepszy wynik według wybranej metryki
                 entry.value.maxByOrNull { point -> point.weight }
             }
             .values
@@ -676,13 +677,13 @@ class StatisticsViewModel @Inject constructor(
             } else null
         }.groupBy { it.label }
             .mapValues { entry ->
-                // Dla każdego miesiąca w roku, wybierz najlepszy wynik według wybranej metryki
                 entry.value.maxByOrNull { point -> point.weight }
             }
             .values
             .filterNotNull()
             .sortedBy { it.timestamp }
     }
+
 
     private fun calculateExerciseProgress(
         exerciseId: String,
@@ -727,13 +728,26 @@ class StatisticsViewModel @Inject constructor(
     private fun calculateExerciseStatistics(
         exercise: Exercise,
         allWorkouts: List<CompletedWorkout>,
-        timePeriod: TimePeriod
+        timePeriod: TimePeriod,
+        metric: ProgressMetric
     ): ExerciseStatisticsData? {
+        // WSZYSTKIE treningi (dla Personal Record i Max 1RM)
+        val allExerciseWorkouts = allWorkouts
+            .filter { workout -> workout.exercises.any { it.exerciseId == exercise.id } }
+
+        val allSetsEver = allExerciseWorkouts
+            .flatMap { workout ->
+                workout.exercises
+                    .filter { it.exerciseId == exercise.id }
+                    .flatMap { it.sets }
+            }
+
+        if (allSetsEver.isEmpty()) return null
+
+        // FILTROWANE treningi (dla pozostałych statystyk)
         val filteredWorkouts = filterWorkoutsByTimePeriod(allWorkouts, timePeriod)
         val exerciseWorkouts = filteredWorkouts
             .filter { workout -> workout.exercises.any { it.exerciseId == exercise.id } }
-
-        if (exerciseWorkouts.isEmpty()) return null
 
         val allSets = exerciseWorkouts
             .flatMap { workout ->
@@ -744,22 +758,28 @@ class StatisticsViewModel @Inject constructor(
 
         if (allSets.isEmpty()) return null
 
-        // Podstawowe statystyki
-        val personalBest = allSets.maxByOrNull { it.weight }
+        // === PERSONAL RECORDS (wszystkie dane, niezależnie od okresu) ===
+        val personalBestWeightSet = allSetsEver.maxByOrNull { it.weight }
+        val personalBestWeight = personalBestWeightSet?.weight ?: 0.0
+        val personalBest1RM = allSetsEver.maxOfOrNull { calculate1RM(it.weight, it.reps) } ?: 0.0
+
+        // === STATYSTYKI DLA WYBRANEGO OKRESU ===
+
+        // Total Reps = suma wszystkich powtórzeń w wybranym okresie
+        val totalReps = allSets.sumOf { it.reps }
+
         val averageWeight = allSets.map { it.weight }.average()
         val averageReps = allSets.map { it.reps }.average()
         val averageSets = exerciseWorkouts.map { workout ->
             workout.exercises.filter { it.exerciseId == exercise.id }.sumOf { it.sets.size }
         }.average()
 
-        // Oblicz statystyki dla różnych metryk
-        val personalBest1RM = allSets.maxOfOrNull { calculate1RM(it.weight, it.reps) } ?: 0.0
+        // Pozostałe statystyki dla wybranego okresu
         val average1RM = allSets.map { calculate1RM(it.weight, it.reps) }.average()
-
         val personalBestVolume = allSets.maxOfOrNull { calculateVolume(it.weight, it.reps) } ?: 0.0
         val averageVolume = allSets.map { calculateVolume(it.weight, it.reps) }.average()
 
-        // Oblicz tonaż na trening
+        // Oblicz tonaż na trening (dla wybranego okresu)
         val workoutTonnages = exerciseWorkouts.map { workout ->
             val exerciseSets = workout.exercises
                 .filter { it.exerciseId == exercise.id }
@@ -769,29 +789,28 @@ class StatisticsViewModel @Inject constructor(
         val personalBestTonnage = workoutTonnages.maxOrNull() ?: 0.0
         val averageTonnage = if (workoutTonnages.isNotEmpty()) workoutTonnages.average() else 0.0
 
-        // Oblicz progress points dla wybranej metryki
         val progressPoints = when (timePeriod) {
-            TimePeriod.WEEK -> calculateWeeklyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
-            TimePeriod.MONTH -> calculateMonthlyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
-            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
-            TimePeriod.YEAR -> calculateYearlyProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
-            TimePeriod.ALL -> calculateAllTimeProgressPointsForMetric(exerciseWorkouts, exercise.id, selectedProgressMetric.value)
+            TimePeriod.WEEK -> calculateWeeklyProgressPointsForMetric(exerciseWorkouts, exercise.id, metric)
+            TimePeriod.MONTH -> calculateMonthlyProgressPointsForMetric(exerciseWorkouts, exercise.id, metric)
+            TimePeriod.THREE_MONTHS -> calculateThreeMonthsProgressPointsForMetric(exerciseWorkouts, exercise.id, metric)
+            TimePeriod.YEAR -> calculateYearlyProgressPointsForMetric(exerciseWorkouts, exercise.id, metric)
+            TimePeriod.ALL -> calculateAllTimeProgressPointsForMetric(exerciseWorkouts, exercise.id, metric)
         }
 
         return ExerciseStatisticsData(
             exerciseId = exercise.id,
             exerciseName = exercise.name,
-            personalBestWeight = personalBest?.weight ?: 0.0,
-            personalBestReps = personalBest?.reps ?: 0,
-            personalBest1RM = personalBest1RM,
+            personalBestWeight = personalBestWeight, // Z wszystkich danych
+            totalReps = totalReps, // POPRAWKA: Używamy poprawnej nazwy parametru
+            personalBest1RM = personalBest1RM, // Z wszystkich danych
             personalBestVolume = personalBestVolume,
             personalBestTonnage = personalBestTonnage,
-            averageWeight = averageWeight,
-            averageReps = averageReps.toInt(),
+            averageWeight = averageWeight, // Z wybranego okresu
+            averageReps = averageReps.toInt(), // Z wybranego okresu
             average1RM = average1RM,
             averageVolume = averageVolume,
             averageTonnage = averageTonnage,
-            averageSets = averageSets,
+            averageSets = averageSets, // Z wybranego okresu
             progressPoints = progressPoints
         )
     }

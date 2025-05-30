@@ -58,30 +58,32 @@ data class ExerciseDistribution(
     val percentage: Int
 )
 
+// W StatisticsModels.kt - zaktualizuj ProgressPoint
+
 data class ProgressPoint(
     val timestamp: Long,
-    val weight: Double, // Główna wartość do wyświetlenia
+    val weight: Double, // Główna wartość do wyświetlenia (może być wagą, 1RM, objętością lub tonażem)
     val reps: Int,
     val label: String,
     val originalWeight: Double = weight, // Oryginalna waga ze setu
     val originalReps: Int = reps, // Oryginalna liczba powtórzeń
-    val volume: Double = weight * reps, // Objętość (waga × reps)
-    val tonnage: Double = 0.0 // Będzie obliczane jako suma wszystkich setów
+    val volume: Double = weight * reps, // Objętość (oryginalna waga × reps)
+    val tonnage: Double = 0.0 // Tonaż (suma wszystkich setów)
 ) {
     val displayText: String
         get() = "${weight.toInt()} kg x $reps"
 
     val oneRMFormatted: String
-        get() = String.format("%.1f kg", weight)
+        get() = String.format("%.1f kg", weight) // weight zawiera już 1RM gdy metryka to ONE_RM
 
     val originalSetFormatted: String
-        get() = "${originalWeight}kg × ${originalReps} reps"
+        get() = "${originalWeight.toInt()}kg × ${originalReps} reps"
 
     val volumeFormatted: String
-        get() = String.format("%.0f kg×reps", volume)
+        get() = String.format("%.0f kg×reps", if (volume > 0) volume else weight) // weight może zawierać objętość
 
     val tonnageFormatted: String
-        get() = String.format("%.1f kg", tonnage)
+        get() = String.format("%.1f kg", if (tonnage > 0) tonnage else weight) // weight może zawierać tonaż
 }
 
 data class ProgressData(
@@ -93,17 +95,17 @@ data class ProgressData(
 data class ExerciseStatisticsData(
     val exerciseId: String,
     val exerciseName: String,
-    val personalBestWeight: Double,
-    val personalBestReps: Int,
-    val personalBest1RM: Double, // Najlepszy teoretyczny 1RM
-    val personalBestVolume: Double, // Najlepszy pojedynczy set (waga × reps)
-    val personalBestTonnage: Double, // Najlepszy tonaż w jednym treningu
-    val averageWeight: Double,
-    val averageReps: Int,
-    val average1RM: Double, // Średni 1RM
-    val averageVolume: Double, // Średnia objętość na set
-    val averageTonnage: Double, // Średni tonaż na trening
-    val averageSets: Double,
+    val personalBestWeight: Double, // Najwyższa waga (ze wszystkich czasów)
+    val totalReps: Int, // ZMIANA: Całkowita liczba powtórzeń w wybranym okresie
+    val personalBest1RM: Double, // Najlepszy teoretyczny 1RM (ze wszystkich czasów)
+    val personalBestVolume: Double, // Najlepszy pojedynczy set (waga × reps) w wybranym okresie
+    val personalBestTonnage: Double, // Najlepszy tonaż w jednym treningu w wybranym okresie
+    val averageWeight: Double, // Średnia waga w wybranym okresie
+    val averageReps: Int, // Średnie reps na set w wybranym okresie
+    val average1RM: Double, // Średni 1RM w wybranym okresie
+    val averageVolume: Double, // Średnia objętość na set w wybranym okresie
+    val averageTonnage: Double, // Średni tonaż na trening w wybranym okresie
+    val averageSets: Double, // Średnia liczba setów na trening w wybranym okresie
     val progressPoints: List<ProgressPoint>
 ) {
     val personalBestFormatted: String
@@ -132,4 +134,8 @@ data class ExerciseStatisticsData(
 
     val averageTonnageFormatted: String
         get() = String.format("%.1f kg", averageTonnage)
+
+    // Dodaj formatowanie dla total reps
+    val totalRepsFormatted: String
+        get() = totalReps.toString()
 }
