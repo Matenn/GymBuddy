@@ -14,7 +14,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.entity.Exerci
  */
 @Database(
     entities = [ExerciseEntity::class],
-    version = 1,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(StringListConverter::class)

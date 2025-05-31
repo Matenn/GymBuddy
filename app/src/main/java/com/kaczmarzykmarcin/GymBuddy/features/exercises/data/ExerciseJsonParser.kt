@@ -83,7 +83,6 @@ class ExerciseJsonParser @Inject constructor(
      * Konwertuje ExerciseJson na model Exercise
      */
     fun convertToModel(exerciseJson: ExerciseJson): Exercise {
-        // Sprawdzamy, czy nazwa zaczyna się od cyfry - jeśli tak, używamy "#" jako sortLetter
         val sortLetter = when {
             exerciseJson.name.firstOrNull()?.isDigit() == true -> "#"
             else -> exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
@@ -91,10 +90,17 @@ class ExerciseJsonParser @Inject constructor(
 
         val category = exerciseJson.category ?: determineCategory(exerciseJson.primaryMuscles)
 
-        // Obrazki - pełne ścieżki dostępu do zasobów
+        // Usuwanie duplikacji w ścieżkach obrazów
         val imagesList = exerciseJson.images ?: emptyList()
         val firstImageUrl = if (imagesList.isNotEmpty()) {
-            "file:///android_asset/exercise_images/${exerciseJson.id}/${imagesList.first()}"
+            val firstImage = imagesList.first()
+            // Usuń duplikację w ścieżce - jeśli zaczyna się od id, usuń pierwszy segment
+            val cleanImagePath = if (firstImage.startsWith("${exerciseJson.id}/")) {
+                firstImage.removePrefix("${exerciseJson.id}/")
+            } else {
+                firstImage
+            }
+            "file:///android_asset/exercise_images/${exerciseJson.id}/$cleanImagePath"
         } else {
             null
         }
@@ -114,7 +120,15 @@ class ExerciseJsonParser @Inject constructor(
             instructions = exerciseJson.instructions,
             notes = exerciseJson.notes ?: emptyList(),
             tips = exerciseJson.tips ?: emptyList(),
-            images = exerciseJson.images?.map { "file:///android_asset/exercise_images/${exerciseJson.id}/$it" } ?: emptyList()
+            // Usuwanie duplikacji - mapuj każdy obraz i usuń duplikację
+            images = exerciseJson.images?.map { imageName ->
+                val cleanImagePath = if (imageName.startsWith("${exerciseJson.id}/")) {
+                    imageName.removePrefix("${exerciseJson.id}/")
+                } else {
+                    imageName
+                }
+                "file:///android_asset/exercise_images/${exerciseJson.id}/$cleanImagePath"
+            } ?: emptyList()
         )
     }
 
@@ -122,7 +136,6 @@ class ExerciseJsonParser @Inject constructor(
      * Konwertuje ExerciseJson na encję Room
      */
     fun convertToEntity(exerciseJson: ExerciseJson): ExerciseEntity {
-        // Sprawdzamy, czy nazwa zaczyna się od cyfry - jeśli tak, używamy "#" jako sortLetter
         val sortLetter = when {
             exerciseJson.name.firstOrNull()?.isDigit() == true -> "#"
             else -> exerciseJson.name.firstOrNull()?.uppercase() ?: "A"
@@ -130,10 +143,17 @@ class ExerciseJsonParser @Inject constructor(
 
         val category = exerciseJson.category ?: determineCategory(exerciseJson.primaryMuscles)
 
-        // Obrazki - pełne ścieżki dostępu do zasobów
+        // Usuwanie duplikacji w ścieżkach obrazów
         val imagesList = exerciseJson.images ?: emptyList()
         val firstImageUrl = if (imagesList.isNotEmpty()) {
-            "file:///android_asset/exercise_images/${exerciseJson.id}/${imagesList.first()}"
+            val firstImage = imagesList.first()
+            // Usuń duplikację w ścieżce - jeśli zaczyna się od id, usuń pierwszy segment
+            val cleanImagePath = if (firstImage.startsWith("${exerciseJson.id}/")) {
+                firstImage.removePrefix("${exerciseJson.id}/")
+            } else {
+                firstImage
+            }
+            "file:///android_asset/exercise_images/${exerciseJson.id}/$cleanImagePath"
         } else {
             null
         }
@@ -153,7 +173,15 @@ class ExerciseJsonParser @Inject constructor(
             tips = exerciseJson.tips ?: emptyList(),
             sortLetter = sortLetter,
             imageUrl = firstImageUrl,
-            images = exerciseJson.images?.map { "file:///android_asset/exercise_images/${exerciseJson.id}/$it" } ?: emptyList()
+            // Usuwanie duplikacji - mapuj każdy obraz i usuń duplikację
+            images = exerciseJson.images?.map { imageName ->
+                val cleanImagePath = if (imageName.startsWith("${exerciseJson.id}/")) {
+                    imageName.removePrefix("${exerciseJson.id}/")
+                } else {
+                    imageName
+                }
+                "file:///android_asset/exercise_images/${exerciseJson.id}/$cleanImagePath"
+            } ?: emptyList()
         )
     }
 

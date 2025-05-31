@@ -65,6 +65,9 @@ fun ExerciseLibraryContent(
     onBackPressed: (() -> Unit)? = null,
     onExercisesSelected: ((List<Exercise>) -> Unit)? = null
 ) {
+    // Stan dla wyświetlania szczegółów ćwiczenia
+    var selectedExerciseForDetails by remember { mutableStateOf<Exercise?>(null) }
+
     // Istniejące stany
     val exercisesGroupedByLetter by viewModel.exercisesGrouped.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -337,7 +340,8 @@ fun ExerciseLibraryContent(
                                                 if (selectionMode) {
                                                     viewModel.toggleExerciseSelection(exercise)
                                                 } else {
-                                                    // Nawigacja do szczegółów ćwiczenia w trybie normalnym
+                                                    // Pokaż szczegóły ćwiczenia w trybie normalnym
+                                                    selectedExerciseForDetails = exercise
                                                 }
                                             }
                                         )
@@ -375,6 +379,14 @@ fun ExerciseLibraryContent(
             }
         }
 
+        // Bottom Sheet ze szczegółami ćwiczenia
+        selectedExerciseForDetails?.let { exercise ->
+            ExerciseDetailBottomSheet(
+                exercise = exercise,
+                onDismiss = { selectedExerciseForDetails = null }
+            )
+        }
+
         // Bottom Sheety do filtrowania
         if (showCategoryFilter) {
             CategoryFilterBottomSheet(
@@ -407,4 +419,5 @@ fun ExerciseLibraryContent(
                 }
             )
         }
-    }}
+    }
+}

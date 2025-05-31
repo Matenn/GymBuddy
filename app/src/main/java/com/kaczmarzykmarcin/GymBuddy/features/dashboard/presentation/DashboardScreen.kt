@@ -41,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -56,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,14 +83,26 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthState
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.data.repository.DashboardViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
+import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutDetailsBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
 import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 private const val TAG = "DashboardScreen"
+
+/**
+ * Punkt wejścia do wstrzykiwania repozytorium - taki sam jak w WorkoutHistoryScreen
+ */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface WorkoutRepositoryEntryPoint {
+    val workoutRepository: com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+}
 
 @Composable
 fun DashboardScreen(
@@ -97,9 +111,27 @@ fun DashboardScreen(
     dashboardViewModel: DashboardViewModel = hiltViewModel(),
     workoutViewModel: WorkoutViewModel = hiltViewModel()
 ) {
+    // Pobierz repozytorium przez EntryPoint - tak samo jak w WorkoutHistoryScreen
+    val context = LocalContext.current
+    val entryPoint = EntryPointAccessors.fromApplication(
+        context,
+        WorkoutRepositoryEntryPoint::class.java
+    )
+    val workoutRepository = entryPoint.workoutRepository
+
     val userData by dashboardViewModel.userData.collectAsState()
     val lastWorkout by dashboardViewModel.lastWorkout.collectAsState()
     val weeklyActivity by dashboardViewModel.weeklyActivity.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+
+    // Zmienne stanu dla szczegółów treningu - tak samo jak w WorkoutHistoryScreen
+    var selectedWorkoutId by remember { mutableStateOf<String?>(null) }
+    var selectedWorkout by remember { mutableStateOf<CompletedWorkout?>(null) }
+    var isLoadingWorkout by remember { mutableStateOf(false) }
+
+    // Dodaj zmienne stanu dla aktywnego treningu i rejestratora treningu
+    val activeWorkout by workoutViewModel.activeWorkout.collectAsState()
+    val showWorkoutRecorder by workoutViewModel.showWorkoutRecorder.collectAsState()
 
     val currentUser = when (val authState = authViewModel.authState.collectAsState().value) {
         is AuthState.Authenticated -> authState.user
@@ -114,6 +146,29 @@ fun DashboardScreen(
 
             // Also check for active workout
             workoutViewModel.checkActiveWorkout(user.uid)
+
+            // Załaduj dane potrzebne do treningu
+            workoutViewModel.loadCategories()
+            workoutViewModel.loadAllExercises()
+        }
+    }
+
+    // Ładuj szczegóły treningu gdy zostanie wybrany - tak samo jak w WorkoutHistoryScreen
+    LaunchedEffect(selectedWorkoutId) {
+        selectedWorkoutId?.let { workoutId ->
+            isLoadingWorkout = true
+            try {
+                val result = workoutRepository.getCompletedWorkout(workoutId)
+                if (result.isSuccess) {
+                    selectedWorkout = result.getOrNull()
+                } else {
+                    Log.e(TAG, "Error loading workout details: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception loading workout details", e)
+            } finally {
+                isLoadingWorkout = false
+            }
         }
     }
 
@@ -125,8 +180,8 @@ fun DashboardScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp, 0.dp, 16.dp, 16.dp)
                 .padding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top).asPaddingValues())
+                .padding(16.dp, 0.dp, 16.dp, 16.dp)
                 .padding(paddingValues) // Dodaj padding przekazany z AppScaffold
                 .verticalScroll(rememberScrollState())
         ) {
@@ -176,7 +231,7 @@ fun DashboardScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Training section
             Text(
@@ -186,12 +241,10 @@ fun DashboardScreen(
                 )
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             // Weekly activity calendar
             WeeklyActivityCalendar(weeklyActivity)
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Last workout summary
             Text(
@@ -201,19 +254,32 @@ fun DashboardScreen(
                 )
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
-
             if (lastWorkout != null) {
-                LastWorkoutSummary(lastWorkout!!)
+                LastWorkoutSummary(
+                    workout = lastWorkout!!,
+                    onDetailsClick = {
+                        // Pokaż szczegóły treningu w bottom sheet - tak samo jak w WorkoutHistoryScreen
+                        selectedWorkoutId = lastWorkout!!.id
+                    }
+                )
             } else {
                 NoWorkoutYet()
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Start new workout button
+            // Start new workout button - zaktualizowana implementacja
             Button(
-                onClick = { navController.navigate(NavigationRoutes.START_WORKOUT) },
+                onClick = {
+                    currentUser?.let { user ->
+                        // Only start a new workout if there isn't already an active one
+                        if (activeWorkout == null) {
+                            workoutViewModel.startNewWorkout(user.uid)
+                        }
+                        // Always show the recorder (whether new or existing workout)
+                        workoutViewModel.showWorkoutRecorder(true)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -223,12 +289,15 @@ fun DashboardScreen(
                 )
             ) {
                 Text(
-                    text = stringResource(R.string.start_new_workout),
+                    text = if (activeWorkout == null)
+                        stringResource(R.string.start_new_workout)
+                    else
+                        stringResource(R.string.resume_workout),
                     fontSize = 18.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Progress section
             Text(
@@ -237,8 +306,6 @@ fun DashboardScreen(
                     fontWeight = FontWeight.Bold
                 )
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             userData?.let { user ->
                 LevelProgressBar(
@@ -251,7 +318,63 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(80.dp)) // Space for bottom navigation bar
         }
 
+        // Wskaźnik ładowania przy pobieraniu szczegółów treningu - tak samo jak w WorkoutHistoryScreen
+        if (isLoadingWorkout) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.Black)
+            }
+        }
+    }
 
+    // Wyświetl bottom sheet jeśli jest wybrany trening - tak samo jak w WorkoutHistoryScreen
+    selectedWorkout?.let { workout ->
+        WorkoutDetailsBottomSheet(
+            workout = workout,
+            onDismiss = {
+                selectedWorkout = null
+                selectedWorkoutId = null
+            },
+            onWorkoutUpdate = { updatedWorkout ->
+                // Use coroutineScope to call suspend functions
+                coroutineScope.launch {
+                    try {
+                        val result = workoutRepository.updateWorkout(updatedWorkout)
+                        if (result.isSuccess) {
+                            Log.d(TAG, "Workout updated successfully")
+
+                            // Update the selected workout with the new data
+                            selectedWorkout = updatedWorkout
+
+                            // Refresh the dashboard data after update
+                            currentUser?.let { user ->
+                                dashboardViewModel.loadLastWorkout(user.uid)
+                                dashboardViewModel.loadWeeklyActivity(user.uid)
+                            }
+                        } else {
+                            Log.e(TAG, "Failed to update workout: ${result.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Exception updating workout", e)
+                    }
+                }
+            },
+            navController = navController
+        )
+    }
+
+    // Dodaj obserwowanie zmian w treningu aby odświeżyć dashboard
+    LaunchedEffect(activeWorkout?.endTime) {
+        // Gdy trening zostanie zakończony (endTime się zmieni), odśwież dane dashboard
+        if (activeWorkout?.endTime != null) {
+            currentUser?.let { user ->
+                dashboardViewModel.loadLastWorkout(user.uid)
+                dashboardViewModel.loadWeeklyActivity(user.uid)
+                dashboardViewModel.loadUserData(user.uid) // Odśwież też dane użytkownika (XP, poziom)
+            }
+        }
     }
 }
 
@@ -315,7 +438,10 @@ fun DayCircle(day: String, isActive: Boolean) {
 }
 
 @Composable
-fun LastWorkoutSummary(workout: CompletedWorkout) {
+fun LastWorkoutSummary(
+    workout: CompletedWorkout,
+    onDetailsClick: () -> Unit // Dodaj parametr callback
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -433,9 +559,9 @@ fun LastWorkoutSummary(workout: CompletedWorkout) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Details button
+            // Details button - teraz z działającym callback
             Button(
-                onClick = { /* Navigate to workout details */ },
+                onClick = onDetailsClick,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -570,121 +696,12 @@ fun LevelProgressBar(currentXp: Int, maxXp: Int, level: Int) {
         }
     }
 }
-/*
-@Composable
-fun BottomNavigationBar(
-    navController: NavController,
-    modifier: Modifier = Modifier
-) {
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
 
-    NavigationBar(
-        modifier = modifier.fillMaxWidth(),
-        containerColor = Color.White
-    ) {
-        // Dashboard
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.Home, contentDescription = stringResource(R.string.dashboard)) },
-            selected = currentRoute == NavigationRoutes.MAIN,
-            onClick = {
-                if (currentRoute != NavigationRoutes.MAIN) {
-                    navController.navigate(NavigationRoutes.MAIN) {
-                        popUpTo(NavigationRoutes.MAIN) { inclusive = true }
-                    }
-                }
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color.Black,
-                unselectedIconColor = Color.Gray,
-                indicatorColor = Color.White
-            )
-        )
-
-        // Workout History
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.History, contentDescription = stringResource(R.string.history)) },
-            selected = currentRoute == NavigationRoutes.HISTORY,
-            onClick = {
-                if (currentRoute != NavigationRoutes.HISTORY) {
-                    navController.navigate(NavigationRoutes.HISTORY)
-                }
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color.Black,
-                unselectedIconColor = Color.Gray,
-                indicatorColor = Color.White
-            )
-        )
-
-        // Start Workout (center button)
-        NavigationBarItem(
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = stringResource(R.string.start_workout),
-                        tint = Color.White
-                    )
-                }
-            },
-            selected = false,
-            onClick = {
-                navController.navigate(NavigationRoutes.WORKOUT_SCREEN)
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color.Black,
-                unselectedIconColor = Color.Gray,
-                indicatorColor = Color.White
-            )
-        )
-
-        // Exercise Library
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.FitnessCenter, contentDescription = stringResource(R.string.exercises)) },
-            selected = currentRoute == NavigationRoutes.EXERCISES,
-            onClick = {
-                if (currentRoute != NavigationRoutes.EXERCISES) {
-                    navController.navigate(NavigationRoutes.EXERCISES)
-                }
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color.Black,
-                unselectedIconColor = Color.Gray,
-                indicatorColor = Color.White
-            )
-        )
-
-        // Statistics
-        NavigationBarItem(
-            icon = { Icon(Icons.Default.BarChart, contentDescription = stringResource(R.string.statistics)) },
-            selected = currentRoute == NavigationRoutes.STATISTICS,
-            onClick = {
-                if (currentRoute != NavigationRoutes.STATISTICS) {
-                    navController.navigate(NavigationRoutes.STATISTICS)
-                }
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = Color.Black,
-                unselectedIconColor = Color.Gray,
-                indicatorColor = Color.White
-            )
-        )
-    }
-}
-
-
- */
 // Helper functions
 private fun formatDuration(seconds: Long): String {
     return TimeUtils.formatDurationSeconds(seconds)
 }
+
 private fun calculateMaxXp(level: Int): Int {
     return 100 + (level - 1) * 50
 }

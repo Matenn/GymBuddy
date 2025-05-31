@@ -193,7 +193,19 @@
     <string name="select_exercise">Select exercise</string>
 
 
-    <!-- Statistics Screen -->
+    <!-- Szczegóły ćwiczenia -->
+
+    <string name="bookmark">Dodaj do zakładek</string>
+    <string name="no_image_available">Brak dostępnego obrazu</string>
+    <string name="movement_type">Typ ruchu</string>
+    <string name="force_type">Siła</string>
+    <string name="equipment">Sprzęt</string>
+    <string name="category">Kategoria</string>
+    <string name="primary_muscles">Główne mięśnie</string>
+    <string name="secondary_muscles">Wspomagające mięśnie</string>
+    <string name="instructions">Instrukcje</string>
+    <string name="notes">Notatki</string>
+    <string name="tips">Wskazówki</string>
 
 
 </resources>
