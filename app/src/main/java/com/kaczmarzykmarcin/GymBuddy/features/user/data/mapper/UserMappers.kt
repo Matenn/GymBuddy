@@ -132,28 +132,71 @@ class UserMappers(private val gson: Gson) {
         )
     }
 
-    // UserAchievement
-    fun toEntity(model: UserAchievement, needsSync: Boolean = false): UserAchievementEntity {
-        return UserAchievementEntity(
+    // ===== NOWY SYSTEM OSIĄGNIĘĆ =====
+
+    // AchievementDefinition
+    fun toEntity(model: AchievementDefinition): AchievementDefinitionEntity {
+        return AchievementDefinitionEntity(
+            id = model.id,
+            title = model.title,
+            description = model.description,
+            type = model.type.name,
+            targetValue = model.targetValue,
+            xpReward = model.xpReward,
+            iconName = model.iconName,
+            isActive = model.isActive,
+            exerciseId = model.exerciseId,
+            categoryId = model.categoryId,
+            createdAt = model.createdAt.seconds
+        )
+    }
+
+    fun toModel(entity: AchievementDefinitionEntity): AchievementDefinition {
+        return AchievementDefinition(
+            id = entity.id,
+            title = entity.title,
+            description = entity.description,
+            type = try {
+                AchievementType.valueOf(entity.type)
+            } catch (e: Exception) {
+                AchievementType.FIRST_TIME
+            },
+            targetValue = entity.targetValue,
+            xpReward = entity.xpReward,
+            iconName = entity.iconName,
+            isActive = entity.isActive,
+            exerciseId = entity.exerciseId,
+            categoryId = entity.categoryId,
+            createdAt = com.google.firebase.Timestamp(entity.createdAt, 0)
+        )
+    }
+
+    // AchievementProgress
+    fun toEntity(model: AchievementProgress): AchievementProgressEntity {
+        return AchievementProgressEntity(
             id = model.id,
             userId = model.userId,
             achievementId = model.achievementId,
-            earnedAt = model.earnedAt,
-            needsSync = needsSync,
-            lastSyncTime = System.currentTimeMillis()
+            currentValue = model.currentValue,
+            isCompleted = model.isCompleted,
+            completedAt = model.completedAt?.seconds,
+            lastUpdated = model.lastUpdated.seconds
         )
     }
 
-    fun toModel(entity: UserAchievementEntity): UserAchievement {
-        return UserAchievement(
+    fun toModel(entity: AchievementProgressEntity): AchievementProgress {
+        return AchievementProgress(
             id = entity.id,
             userId = entity.userId,
             achievementId = entity.achievementId,
-            earnedAt = entity.earnedAt
+            currentValue = entity.currentValue,
+            isCompleted = entity.isCompleted,
+            completedAt = entity.completedAt?.let { com.google.firebase.Timestamp(it, 0) },
+            lastUpdated = com.google.firebase.Timestamp(entity.lastUpdated, 0)
         )
     }
 
-    // WorkoutTemplate - Zmienione aby obsługiwać List<CompletedExercise> zamiast List<String>
+    // WorkoutTemplate
     fun toEntity(model: WorkoutTemplate, needsSync: Boolean = false): WorkoutTemplateEntity {
         return WorkoutTemplateEntity(
             id = model.id,
@@ -161,7 +204,7 @@ class UserMappers(private val gson: Gson) {
             name = model.name,
             description = model.description,
             categoryId = model.categoryId,
-            exercises = gson.toJson(model.exercises.map { it.toMap() }), // Serializacja do JSON
+            exercises = gson.toJson(model.exercises.map { it.toMap() }),
             createdAt = model.createdAt,
             updatedAt = model.updatedAt,
             needsSync = needsSync,
@@ -170,24 +213,18 @@ class UserMappers(private val gson: Gson) {
     }
 
     fun toModel(entity: WorkoutTemplateEntity): WorkoutTemplate {
-        // Add robust error handling for JSON parsing
         val completedExercises = try {
             val exercisesType = object : TypeToken<List<Map<String, Any?>>>() {}.type
             val exercisesMaps = gson.fromJson<List<Map<String, Any?>>>(entity.exercises, exercisesType)
             exercisesMaps?.map { CompletedExercise.fromMap(it) } ?: emptyList()
         } catch (e: Exception) {
-            // If parsing fails, try to determine what format we have
             try {
-                // Maybe it's a list of strings (exercise IDs) instead of a list of objects?
                 val exerciseIdsType = object : TypeToken<List<String>>() {}.type
                 val exerciseIds = gson.fromJson<List<String>>(entity.exercises, exerciseIdsType)
-
-                // If so, convert each ID to a minimal CompletedExercise
                 exerciseIds?.map {
                     CompletedExercise(exerciseId = it, name = "", category = "", sets = emptyList())
                 } ?: emptyList()
             } catch (e2: Exception) {
-                // If all parsing attempts fail, log the error and return empty list
                 android.util.Log.e("UserMappers", "Failed to parse exercises JSON: ${entity.exercises}", e2)
                 emptyList()
             }
@@ -199,7 +236,7 @@ class UserMappers(private val gson: Gson) {
             name = entity.name,
             description = entity.description,
             categoryId = entity.categoryId,
-            exercises = completedExercises, // The safely parsed list
+            exercises = completedExercises,
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt
         )
@@ -243,20 +280,20 @@ class UserMappers(private val gson: Gson) {
         )
     }
 
-    // UserData (composite model)
+    // UserData (composite model) - ZAKTUALIZOWANE dla nowego systemu osiągnięć
     fun toUserData(
         user: User,
         userAuth: UserAuth,
         userProfile: UserProfile,
         userStats: UserStats,
-        achievements: List<UserAchievement>
+        achievements: List<AchievementWithProgress> = emptyList()
     ): UserData {
         return UserData(
             user = user,
             auth = userAuth,
             profile = userProfile,
             stats = userStats,
-            achievements = achievements
+            achievements = emptyList() // Stare osiągnięcia już nie używane
         )
     }
 
@@ -264,15 +301,14 @@ class UserMappers(private val gson: Gson) {
         userEntity: UserEntity,
         userAuthEntity: UserAuthEntity,
         userProfileEntity: UserProfileEntity,
-        userStatsEntity: UserStatsEntity,
-        achievementEntities: List<UserAchievementEntity>
+        userStatsEntity: UserStatsEntity
     ): UserData {
         return UserData(
             user = toModel(userEntity),
             auth = toModel(userAuthEntity),
             profile = toModel(userProfileEntity),
             stats = toModel(userStatsEntity),
-            achievements = achievementEntities.map { toModel(it) }
+            achievements = emptyList() // Stare osiągnięcia już nie używane
         )
     }
 

@@ -4,16 +4,16 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 
 /**
- * Klasa reprezentująca osiągnięcie zdobyte przez użytkownika.
- * Przechowuje odniesienie do ID użytkownika, ID osiągnięcia oraz datę zdobycia.
+ * Klasa reprezentująca osiągnięcie zdobyte przez użytkownika (stary system).
+ * DEPRECATED: Używaj AchievementDefinition i AchievementProgress zamiast tego.
  */
+@Deprecated("Use AchievementDefinition and AchievementProgress instead")
 data class UserAchievement(
     @DocumentId val id: String = "",
     val userId: String = "",
     val achievementId: Int = 0,
     val earnedAt: Timestamp = Timestamp.now()
 ) {
-    // Przydatne metody konwersji do/z Map dla Firestore
     fun toMap(): Map<String, Any?> = mapOf(
         "userId" to userId,
         "achievementId" to achievementId,
@@ -28,9 +28,4 @@ data class UserAchievement(
             earnedAt = map["earnedAt"] as? Timestamp ?: Timestamp.now()
         )
     }
-
-    /**
-     * Pobiera obiekt Achievement odpowiadający temu UserAchievement
-     */
-    fun getAchievement(): Achievement? = Achievement.getById(achievementId)
 }

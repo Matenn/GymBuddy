@@ -28,6 +28,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.reset.PasswordRe
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeScreen
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
+import com.kaczmarzykmarcin.GymBuddy.features.profile.presentation.ProfileScreen
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.screen.StatisticsScreen
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.WorkoutScreen
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.categories.CategoryManagementScreen
@@ -246,6 +247,19 @@ fun AppNavigation(navController: NavHostController) {
         ) {
             Log.d(TAG, "Loading StatisticsScreen")
             StatisticsScreen(navController)
+        }
+
+        composable(
+            route = NavigationRoutes.PROFILE,
+            enterTransition = {
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading StatisticsScreen")
+            ProfileScreen(navController)
         }
     }
 

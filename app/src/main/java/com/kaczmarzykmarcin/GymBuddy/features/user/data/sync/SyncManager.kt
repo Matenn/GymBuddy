@@ -118,8 +118,8 @@ class SyncManager @Inject constructor(
             // Synchronizacja statystyk użytkowników
             syncUserStats()
 
-            // Synchronizacja osiągnięć użytkowników
-            syncUserAchievements()
+            // USUNIĘTO: Synchronizacja starych osiągnięć użytkowników
+            // syncUserAchievements() - już nie potrzebne
 
             // Synchronizacja szablonów treningów
             syncWorkoutTemplates()
@@ -218,23 +218,10 @@ class SyncManager @Inject constructor(
     }
 
     /**
-     * Synchronizuje osiągnięcia użytkowników
+     * USUNIĘTO: Synchronizacja starych osiągnięć użytkowników
+     * Nowy system osiągnięć jest synchronizowany przez AchievementRepository
      */
-    private suspend fun syncUserAchievements() {
-        val userAchievementsToSync = userAchievementDao.getUserAchievementsToSync()
-
-        for (userAchievementEntity in userAchievementsToSync) {
-            try {
-                val userAchievementModel = mappers.toModel(userAchievementEntity)
-                remoteDataSource.addUserAchievement(userAchievementModel)
-
-                // Oznacz jako zsynchronizowane
-                userAchievementDao.updateUserAchievement(userAchievementEntity.copy(needsSync = false, lastSyncTime = System.currentTimeMillis()))
-            } catch (e: Exception) {
-                Log.e(TAG, "Error syncing user achievement: ${userAchievementEntity.id}", e)
-            }
-        }
-    }
+    // private suspend fun syncUserAchievements() { ... }
 
     /**
      * Synchronizuje szablony treningów
@@ -388,10 +375,9 @@ class SyncManager @Inject constructor(
                 userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
                 userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
 
-                // Zapisz osiągnięcia
-                userData.achievements.forEach { achievement ->
-                    userAchievementDao.insertUserAchievement(mappers.toEntity(achievement))
-                }
+                // USUNIĘTO: Zapisywanie starych osiągnięć
+                // Nowy system osiągnięć jest zarządzany przez AchievementRepository
+                Log.d(TAG, "Saved user data to local database (achievements handled by AchievementRepository)")
             }
 
             // Pobierz i zapisz szablony treningów

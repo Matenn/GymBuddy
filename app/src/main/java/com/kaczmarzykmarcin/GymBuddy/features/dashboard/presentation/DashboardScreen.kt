@@ -196,7 +196,7 @@ fun DashboardScreen(
                         .size(42.dp)
                         .clip(CircleShape)
                         .background(Color.LightGray)
-                        .clickable { /* Navigate to profile screen */ }
+                        .clickable { navController.navigate("profile") }
                         .border(1.dp, Color.Gray, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {

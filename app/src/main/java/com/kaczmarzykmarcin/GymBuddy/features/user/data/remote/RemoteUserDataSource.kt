@@ -1,8 +1,11 @@
 package com.kaczmarzykmarcin.GymBuddy.features.user.data.remote
 
+import android.content.ContentValues.TAG
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.kaczmarzykmarcin.GymBuddy.data.model.*
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -597,5 +600,190 @@ class RemoteUserDataSource @Inject constructor(
         }
 
         return providers.firstOrNull() ?: AuthProvider.EMAIL
+    }
+
+    // ===== ACHIEVEMENT DEFINITIONS =====
+
+    suspend fun saveAchievementDefinition(definition: AchievementDefinition): Result<Unit> {
+        return try {
+            firestore.collection("achievement_definitions")
+                .document(definition.id)
+                .set(definition.toMap())
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save achievement definition", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAllAchievementDefinitions(): Result<List<AchievementDefinition>> {
+        return try {
+            val snapshot = firestore.collection("achievement_definitions")
+                .whereEqualTo("isActive", true)
+                .get()
+                .await()
+
+            val definitions = snapshot.documents.mapNotNull { doc ->
+                try {
+                    AchievementDefinition.fromMap(doc.id, doc.data ?: emptyMap())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing achievement definition ${doc.id}", e)
+                    null
+                }
+            }
+
+            Result.success(definitions)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get achievement definitions", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAchievementDefinition(achievementId: String): Result<AchievementDefinition?> {
+        return try {
+            val snapshot = firestore.collection("achievement_definitions")
+                .document(achievementId)
+                .get()
+                .await()
+
+            val definition = if (snapshot.exists()) {
+                AchievementDefinition.fromMap(snapshot.id, snapshot.data ?: emptyMap())
+            } else {
+                null
+            }
+
+            Result.success(definition)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get achievement definition", e)
+            Result.failure(e)
+        }
+    }
+
+// ===== ACHIEVEMENT PROGRESS =====
+
+    suspend fun saveAchievementProgress(progress: AchievementProgress): Result<Unit> {
+        return try {
+            firestore.collection("achievement_progresses")
+                .document(progress.id)
+                .set(progress.toMap())
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save achievement progress", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAchievementProgress(userId: String, achievementId: String): Result<AchievementProgress?> {
+        return try {
+            val snapshot = firestore.collection("achievement_progresses")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("achievementId", achievementId)
+                .limit(1)
+                .get()
+                .await()
+
+            val progress = snapshot.documents.firstOrNull()?.let { doc ->
+                try {
+                    AchievementProgress.fromMap(doc.id, doc.data ?: emptyMap())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing achievement progress ${doc.id}", e)
+                    null
+                }
+            }
+
+            Result.success(progress)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get achievement progress", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getUserAchievementProgresses(userId: String): Result<List<AchievementProgress>> {
+        return try {
+            val snapshot = firestore.collection("achievement_progresses")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+
+            val progresses = snapshot.documents.mapNotNull { doc ->
+                try {
+                    AchievementProgress.fromMap(doc.id, doc.data ?: emptyMap())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing achievement progress ${doc.id}", e)
+                    null
+                }
+            }
+
+            Result.success(progresses)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get user achievement progresses", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteAchievementProgress(userId: String, achievementId: String): Result<Unit> {
+        return try {
+            val snapshot = firestore.collection("achievement_progresses")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("achievementId", achievementId)
+                .get()
+                .await()
+
+            // Usuń wszystkie dokumenty które pasują do kryteriów
+            snapshot.documents.forEach { doc ->
+                doc.reference.delete().await()
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete achievement progress", e)
+            Result.failure(e)
+        }
+    }
+
+// ===== POMOCNICZE METODY =====
+
+    suspend fun initializeAchievementDefinitions(definitions: List<AchievementDefinition>): Result<Unit> {
+        return try {
+            val batch = firestore.batch()
+
+            definitions.forEach { definition ->
+                val docRef = firestore.collection("achievement_definitions").document(definition.id)
+                batch.set(docRef, definition.toMap())
+            }
+
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize achievement definitions", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getUserCompletedAchievements(userId: String): Result<List<AchievementProgress>> {
+        return try {
+            val snapshot = firestore.collection("achievement_progresses")
+                .whereEqualTo("userId", userId)
+                .whereEqualTo("isCompleted", true)
+                .orderBy("completedAt", Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            val completedAchievements = snapshot.documents.mapNotNull { doc ->
+                try {
+                    AchievementProgress.fromMap(doc.id, doc.data ?: emptyMap())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing completed achievement ${doc.id}", e)
+                    null
+                }
+            }
+
+            Result.success(completedAchievements)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get user completed achievements", e)
+            Result.failure(e)
+        }
     }
 }

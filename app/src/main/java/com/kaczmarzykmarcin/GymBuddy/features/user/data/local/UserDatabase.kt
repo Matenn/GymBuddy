@@ -38,7 +38,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemp
         WorkoutTemplateEntity::class,
         WorkoutCategoryEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(TimestampConverter::class, MapConverter::class)

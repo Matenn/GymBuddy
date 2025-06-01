@@ -118,3 +118,31 @@ data class WorkoutCategoryEntity(
     val lastSyncTime: Long = System.currentTimeMillis(),
     val needsSync: Boolean = false
 )
+
+// AchievementDefinitionEntity.kt
+@Entity(tableName = "achievement_definitions")
+data class AchievementDefinitionEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val description: String,
+    val type: String,
+    val targetValue: Int,
+    val xpReward: Int,
+    val iconName: String,
+    val isActive: Boolean,
+    val exerciseId: String?,
+    val categoryId: String?,
+    val createdAt: Long
+)
+
+// AchievementProgressEntity.kt
+@Entity(tableName = "achievement_progresses")
+data class AchievementProgressEntity(
+    @PrimaryKey val id: String,
+    val userId: String,
+    val achievementId: String,
+    val currentValue: Int,
+    val isCompleted: Boolean,
+    val completedAt: Long?,
+    val lastUpdated: Long
+)

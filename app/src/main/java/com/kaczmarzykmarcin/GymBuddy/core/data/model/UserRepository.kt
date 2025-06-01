@@ -31,7 +31,8 @@ class UserRepository @Inject constructor(
     private val syncManager: SyncManager,
     private val mappers: UserMappers,
     private val workoutRepository: WorkoutRepository,
-    private val workoutCategoryRepository: WorkoutCategoryRepository
+    private val workoutCategoryRepository: WorkoutCategoryRepository,
+    private val achievementRepository: AchievementRepository
 ) {
     private val TAG = "UserRepository"
 
@@ -78,8 +79,13 @@ class UserRepository @Inject constructor(
             // Inicjalizuj domyślne kategorie treningowe
             workoutCategoryRepository.initializeDefaultCategories(firebaseUser.uid)
 
-            // Dodaj pierwsze osiągnięcie lokalnie i zsynchronizuj
-            addAchievementForUser(firebaseUser.uid, Achievement.FIRST_WORKOUT.id)
+            // Dodaj pierwsze osiągnięcie - używamy nowego systemu osiągnięć
+            createOrUpdateAchievementProgress(
+                firebaseUser.uid,
+                "first_workout",
+                1,
+                true
+            )
 
             Result.success(newUser)
         } catch (e: Exception) {
@@ -117,13 +123,13 @@ class UserRepository @Inject constructor(
      * Pobiera dane użytkownika z lokalnej bazy danych.
      */
     private suspend fun getLocalUserData(userId: String): UserData? {
-        val user = userDao.getUserById(userId) ?: return null
-        val userAuth = userAuthDao.getUserAuthById(user.authId) ?: return null
-        val userProfile = userProfileDao.getUserProfileById(user.profileId) ?: return null
-        val userStats = userStatsDao.getUserStatsById(user.statsId) ?: return null
-        val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
+        val userEntity = userDao.getUserById(userId) ?: return null
+        val userAuthEntity = userAuthDao.getUserAuthById(userEntity.authId) ?: return null
+        val userProfileEntity = userProfileDao.getUserProfileById(userEntity.profileId) ?: return null
+        val userStatsEntity = userStatsDao.getUserStatsById(userEntity.statsId) ?: return null
 
-        return mappers.toUserData(user, userAuth, userProfile, userStats, achievements)
+        // Użyj prostszej metody mappers.toUserData która bierze entity bezpośrednio
+        return mappers.toUserData(userEntity, userAuthEntity, userProfileEntity, userStatsEntity)
     }
 
     /**
@@ -144,10 +150,7 @@ class UserRepository @Inject constructor(
                 userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
                 userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
 
-                val achievementEntities = userData.achievements.map {
-                    mappers.toEntity(it)
-                }
-                userAchievementDao.insertUserAchievements(achievementEntities)
+                // Stare osiągnięcia już nie są obsługiwane
                 Log.d(TAG, "Saved basic user data to local database")
 
                 // Synchronizuj kategorie treningowe
@@ -346,7 +349,29 @@ class UserRepository @Inject constructor(
     }
 
     /**
+     * Aktualizuje statystyki użytkownika.
+     */
+    suspend fun updateUserStats(userStats: UserStats): Result<UserStats> {
+        return try {
+            Log.d(TAG, "Updating user stats for user: ${userStats.userId}")
+
+            // Zapisz lokalnie z flagą synchronizacji
+            val updatedEntity = mappers.toEntity(userStats, true)
+            userStatsDao.updateUserStats(updatedEntity)
+
+            // Uruchom synchronizację w tle
+            syncManager.requestSync()
+
+            Result.success(userStats)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update user stats", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Dodaje XP użytkownikowi i aktualizuje poziom jeśli to konieczne.
+     * STARA METODA - używa wewnętrznej logiki UserStats.calculateLevel()
      */
     suspend fun addUserXp(userId: String, xpAmount: Int): Result<UserStats> {
         return try {
@@ -370,28 +395,62 @@ class UserRepository @Inject constructor(
             // Aktualizuj XP
             val updatedXp = userStats.xp + xpAmount
 
-            // Oblicz nowy poziom
-            val currentLevel = userStats.level
+            // Oblicz nowy poziom używając istniejącej metody z UserStats
             val calculatedLevel = userStats.calculateLevel()
 
             // Aktualizuj model
             val updatedStats = userStats.copy(
                 xp = updatedXp,
-                level = if (calculatedLevel > currentLevel) calculatedLevel else currentLevel
+                level = if (calculatedLevel > userStats.level) calculatedLevel else userStats.level
             )
 
-            // Zapisz lokalnie
-            val updatedEntity = mappers.toEntity(updatedStats, true)
-            userStatsDao.updateUserStats(updatedEntity)
-
-            // Uruchom synchronizację w tle
-            syncManager.requestSync()
-
-            Result.success(updatedStats)
+            // Zapisz i zwróć
+            return updateUserStats(updatedStats)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add user XP", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * NOWA METODA - dodaje XP z nowym algorytmem obliczania poziomu
+     */
+    suspend fun addXP(userId: String, xpAmount: Int): Result<UserStats> {
+        return try {
+            val statsResult = getUserStats(userId)
+            if (statsResult.isSuccess) {
+                val currentStats = statsResult.getOrNull()!!
+                val newXP = currentStats.xp + xpAmount
+                val newLevel = calculateLevel(newXP)
+
+                val updatedStats = currentStats.copy(
+                    xp = newXP,
+                    level = newLevel
+                )
+
+                updateUserStats(updatedStats)
+            } else {
+                statsResult
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add XP", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Oblicza poziom na podstawie XP - nowy algorytm
+     */
+    private fun calculateLevel(xp: Int): Int {
+        var remainingXp = xp
+        var currentLevel = 1
+        var xpForNextLevel = 100
+        while (remainingXp >= xpForNextLevel) {
+            remainingXp -= xpForNextLevel
+            currentLevel++
+            xpForNextLevel = 100 + (currentLevel - 1) * 50
+        }
+        return currentLevel
     }
 
     /**
@@ -423,73 +482,150 @@ class UserRepository @Inject constructor(
         }
     }
 
+    // ===== NOWY SYSTEM OSIĄGNIĘĆ =====
+
     /**
-     * Dodaje osiągnięcie użytkownikowi.
+     * Tworzy lub aktualizuje postęp w osiągnięciu (nowy system)
      */
-    suspend fun addAchievementForUser(userId: String, achievementId: Int): Result<UserAchievement> {
+    suspend fun createOrUpdateAchievementProgress(
+        userId: String,
+        achievementId: String,
+        currentValue: Int,
+        isCompleted: Boolean = false
+    ): Result<AchievementProgress> {
         return try {
-            // Sprawdź, czy użytkownik już ma to osiągnięcie
-            val existingAchievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
-            if (existingAchievement != null) {
-                Log.d(TAG, "User already has achievement $achievementId")
-                return Result.success(mappers.toModel(existingAchievement))
+            Log.d(TAG, "Creating/updating achievement progress: $achievementId for user: $userId")
+
+            // Pobierz istniejący postęp
+            val existingProgress = achievementRepository.getAchievementProgress(userId, achievementId).getOrNull()
+
+            val progress = if (existingProgress != null) {
+                // Aktualizuj istniejący
+                existingProgress.copy(
+                    currentValue = currentValue,
+                    isCompleted = isCompleted || existingProgress.isCompleted,
+                    completedAt = if (isCompleted && existingProgress.completedAt == null) {
+                        com.google.firebase.Timestamp.now()
+                    } else {
+                        existingProgress.completedAt
+                    },
+                    lastUpdated = com.google.firebase.Timestamp.now()
+                )
+            } else {
+                // Utwórz nowy
+                AchievementProgress(
+                    id = java.util.UUID.randomUUID().toString(),
+                    userId = userId,
+                    achievementId = achievementId,
+                    currentValue = currentValue,
+                    isCompleted = isCompleted,
+                    completedAt = if (isCompleted) com.google.firebase.Timestamp.now() else null,
+                    lastUpdated = com.google.firebase.Timestamp.now()
+                )
             }
 
-            // Sprawdź, czy osiągnięcie istnieje
-            val achievement = Achievement.getById(achievementId)
-            if (achievement == null) {
-                Log.e(TAG, "Achievement with ID $achievementId does not exist")
-                return Result.failure(IllegalArgumentException("Achievement with ID $achievementId does not exist"))
+            // Zapisz przez AchievementRepository
+            val result = achievementRepository.updateAchievementProgress(progress)
+
+            // Jeśli osiągnięcie zostało ukończone, dodaj XP
+            if (isCompleted && (existingProgress == null || !existingProgress.isCompleted)) {
+                val definition = achievementRepository.getAchievementDefinition(achievementId).getOrNull()
+                if (definition != null && definition.xpReward > 0) {
+                    addXP(userId, definition.xpReward)
+                    Log.d(TAG, "Added ${definition.xpReward} XP for completing achievement: ${definition.title}")
+                }
             }
 
-            // Utwórz nowe osiągnięcie
-            val userAchievement = UserAchievement(
-                userId = userId,
-                achievementId = achievementId
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create/update achievement progress", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Sprawdza i aktualizuje postęp w osiągnięciach na podstawie aktualnych statystyk użytkownika
+     */
+    suspend fun checkAndUpdateAchievements(userId: String): Result<List<AchievementProgress>> {
+        return try {
+            Log.d(TAG, "Checking and updating achievements for user: $userId")
+
+            val updatedProgresses = mutableListOf<AchievementProgress>()
+
+            // Pobierz aktualne statystyki
+            val statsResult = getUserStats(userId)
+            if (statsResult.isFailure) {
+                return Result.failure(statsResult.exceptionOrNull() ?: Exception("Failed to get user stats"))
+            }
+            val stats = statsResult.getOrNull()!!
+
+            // Sprawdź osiągnięcia związane z liczbą treningów
+            val workoutCountAchievements = listOf(
+                "first_workout" to 1,
+                "workout_count_10" to 10,
+                "workout_count_25" to 25,
+                "workout_count_50" to 50
             )
 
-            // Zapisz lokalnie
-            val entity = mappers.toEntity(userAchievement, true)
-            val generatedId = java.util.UUID.randomUUID().toString()
-            val entityWithId = entity.copy(id = generatedId)
-            userAchievementDao.insertUserAchievement(entityWithId)
+            workoutCountAchievements.forEach { (achievementId, targetValue) ->
+                if (stats.totalWorkoutsCompleted >= targetValue) {
+                    val result = createOrUpdateAchievementProgress(
+                        userId,
+                        achievementId,
+                        stats.totalWorkoutsCompleted,
+                        isCompleted = true
+                    )
+                    if (result.isSuccess) {
+                        updatedProgresses.add(result.getOrNull()!!)
+                    }
+                } else {
+                    val result = createOrUpdateAchievementProgress(
+                        userId,
+                        achievementId,
+                        stats.totalWorkoutsCompleted,
+                        isCompleted = false
+                    )
+                    if (result.isSuccess) {
+                        updatedProgresses.add(result.getOrNull()!!)
+                    }
+                }
+            }
 
-            // Uruchom synchronizację w tle
-            syncManager.requestSync()
+            // Sprawdź osiągnięcia związane z serią treningów
+            val streakAchievements = listOf(
+                "workout_streak_3" to 3,
+                "workout_streak_7" to 7
+            )
 
-            // Przyznaj XP za osiągnięcie
-            addUserXp(userId, achievement.xpReward)
+            streakAchievements.forEach { (achievementId, targetValue) ->
+                if (stats.currentStreak >= targetValue) {
+                    val result = createOrUpdateAchievementProgress(
+                        userId,
+                        achievementId,
+                        stats.currentStreak,
+                        isCompleted = true
+                    )
+                    if (result.isSuccess) {
+                        updatedProgresses.add(result.getOrNull()!!)
+                    }
+                } else {
+                    val result = createOrUpdateAchievementProgress(
+                        userId,
+                        achievementId,
+                        stats.currentStreak,
+                        isCompleted = false
+                    )
+                    if (result.isSuccess) {
+                        updatedProgresses.add(result.getOrNull()!!)
+                    }
+                }
+            }
 
-            Result.success(mappers.toModel(entityWithId))
+            Log.d(TAG, "Updated ${updatedProgresses.size} achievement progresses")
+            Result.success(updatedProgresses)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add achievement", e)
+            Log.e(TAG, "Failed to check and update achievements", e)
             Result.failure(e)
-        }
-    }
-
-    /**
-     * Pobiera wszystkie osiągnięcia użytkownika.
-     */
-    suspend fun getUserAchievements(userId: String): Result<List<UserAchievement>> {
-        return try {
-            val achievements = userAchievementDao.getUserAchievementsByUserId(userId)
-            Result.success(achievements.map { mappers.toModel(it) })
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to get user achievements", e)
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Sprawdza, czy użytkownik posiada dane osiągnięcie.
-     */
-    suspend fun hasAchievement(userId: String, achievementId: Int): Boolean {
-        return try {
-            val achievement = userAchievementDao.getUserAchievementByIdType(userId, achievementId)
-            achievement != null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking for achievement", e)
-            false
         }
     }
 
@@ -575,17 +711,19 @@ class UserRepository @Inject constructor(
             )
 
             // Zapisz lokalnie
-            val updatedEntity = mappers.toEntity(updatedStats, true)
-            userStatsDao.updateUserStats(updatedEntity)
-
-            // Uruchom synchronizację w tle
-            syncManager.requestSync()
+            val updateResult = updateUserStats(updatedStats)
+            if (updateResult.isFailure) {
+                return updateResult
+            }
 
             // Dodaj XP za ukończony trening
-            addUserXp(userId, 50)
+            addXP(userId, 50)
 
-            // Sprawdź osiągnięcia
-            checkWorkoutAchievements(userId, stats, currentStreak)
+            // Sprawdź i zaktualizuj osiągnięcia (nowy system)
+            checkAndUpdateAchievements(userId)
+
+            // Sprawdź też osiągnięcia związane z długością treningu
+            checkWorkoutDurationAchievements(userId, completedWorkout)
 
             Result.success(updatedStats)
         } catch (e: Exception) {
@@ -595,9 +733,59 @@ class UserRepository @Inject constructor(
     }
 
     /**
+     * Sprawdza osiągnięcia związane z długością treningu
+     */
+    private suspend fun checkWorkoutDurationAchievements(userId: String, completedWorkout: CompletedWorkout) {
+        try {
+            val durationInSeconds = completedWorkout.duration / 1000 // Konwertuj z milisekund na sekundy
+
+            // Osiągnięcie za godzinną sesję (3600 sekund)
+            if (durationInSeconds >= 3600) {
+                createOrUpdateAchievementProgress(
+                    userId,
+                    "workout_hour",
+                    durationInSeconds.toInt(),
+                    isCompleted = true
+                )
+            }
+
+            // Osiągnięcie za dwugodzinną sesję (7200 sekund)
+            if (durationInSeconds >= 7200) {
+                createOrUpdateAchievementProgress(
+                    userId,
+                    "workout_2_hours",
+                    durationInSeconds.toInt(),
+                    isCompleted = true
+                )
+            }
+
+            // Sprawdź czy to poranny trening (przed 10:00)
+            val workoutHour = java.util.Calendar.getInstance().apply {
+                time = completedWorkout.startTime.toDate()
+            }.get(java.util.Calendar.HOUR_OF_DAY)
+
+            if (workoutHour < 10) {
+                // Pobierz aktualny postęp w porannych treningach
+                val currentProgress = achievementRepository.getAchievementProgress(userId, "morning_bird").getOrNull()
+                val currentCount = currentProgress?.currentValue ?: 0
+
+                createOrUpdateAchievementProgress(
+                    userId,
+                    "morning_bird",
+                    currentCount + 1,
+                    isCompleted = currentCount + 1 >= 10
+                )
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking workout duration achievements", e)
+        }
+    }
+
+    /**
      * Aktualizuje statystyki ćwiczeń na podstawie zakończonego treningu.
      */
-    private fun updateExerciseStats(
+    private suspend fun updateExerciseStats(
         currentStats: Map<String, ExerciseStat>,
         completedWorkout: CompletedWorkout
     ): Map<String, ExerciseStat> {
@@ -658,47 +846,34 @@ class UserRepository @Inject constructor(
                 lastPerformedAt = completedWorkout.endTime,
                 progressHistory = limitedHistory
             )
+
+            // Sprawdź osiągnięcia związane z ciężarem w konkretnym ćwiczeniu
+            checkExerciseWeightAchievements(completedWorkout.userId, exercise.exerciseId, bestWeight)
         }
 
         return result
     }
 
     /**
-     * Sprawdza i przyznaje osiągnięcia związane z treningami.
+     * Sprawdza osiągnięcia związane z ciężarem w konkretnych ćwiczeniach
      */
-    private suspend fun checkWorkoutAchievements(
-        userId: String,
-        stats: UserStats,
-        currentStreak: Int
-    ) {
-        // Sprawdź osiągnięcie za serię treningów (3 dni)
-        if (currentStreak >= 3) {
-            if (!hasAchievement(userId, Achievement.WORKOUT_STREAK_3.id)) {
-                addAchievementForUser(userId, Achievement.WORKOUT_STREAK_3.id)
+    private suspend fun checkExerciseWeightAchievements(userId: String, exerciseId: String, weight: Double) {
+        try {
+            // Przykład: osiągnięcie za 100kg na wyciskaniu sztangi leżąc
+            if (exerciseId == "bench-press" && weight >= 100.0) {
+                createOrUpdateAchievementProgress(
+                    userId,
+                    "bench_press_100kg",
+                    weight.toInt(),
+                    isCompleted = true
+                )
             }
-        }
 
-        // Sprawdź osiągnięcie za serię treningów (7 dni)
-        if (currentStreak >= 7) {
-            if (!hasAchievement(userId, Achievement.WORKOUT_STREAK_7.id)) {
-                addAchievementForUser(userId, Achievement.WORKOUT_STREAK_7.id)
-            }
-        }
+            // Tu można dodać więcej osiągnięć dla różnych ćwiczeń
+            // np. squat 200kg, deadlift 250kg, itp.
 
-        // Sprawdź osiągnięcie za 10 ukończonych treningów
-        if (stats.totalWorkoutsCompleted + 1 >= 10) {
-            if (!hasAchievement(userId, Achievement.WORKOUT_COUNT_10.id)) {
-                addAchievementForUser(userId, Achievement.WORKOUT_COUNT_10.id)
-            }
-        }
-
-        // Sprawdź osiągnięcie za poranne treningi
-        if (!hasAchievement(userId, Achievement.MORNING_BIRD.id)) {
-            // Logika sprawdzania porannych treningów mogłaby być bardziej złożona
-            // Na potrzeby przykładu, przyznamy to osiągnięcie po 10 treningach
-            if (stats.totalWorkoutsCompleted + 1 >= 10) {
-                addAchievementForUser(userId, Achievement.MORNING_BIRD.id)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking exercise weight achievements", e)
         }
     }
 }

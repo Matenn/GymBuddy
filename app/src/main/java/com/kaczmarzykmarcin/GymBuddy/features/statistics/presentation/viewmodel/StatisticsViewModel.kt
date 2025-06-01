@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.kaczmarzykmarcin.GymBuddy.data.model.*
+import com.kaczmarzykmarcin.GymBuddy.data.repository.ExerciseRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutCategoryRepository
 import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
@@ -20,13 +21,17 @@ class StatisticsViewModel @Inject constructor(
     private val auth: FirebaseAuth,
     private val workoutRepository: WorkoutRepository,
     private val categoryRepository: WorkoutCategoryRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val exerciseRepository: ExerciseRepository // DODANY DEPENDENCY
 ) : ViewModel() {
 
     private val TAG = "StatisticsViewModel"
 
     // Current user ID
     private val currentUserId = auth.currentUser?.uid ?: ""
+
+    // Cache for exercises to avoid repeated database calls
+    private val exerciseCache = mutableMapOf<String, Exercise>()
 
     // UI State
     private val _selectedTimePeriod = MutableStateFlow(TimePeriod.WEEK)
@@ -65,7 +70,6 @@ class StatisticsViewModel @Inject constructor(
         _selectedProgressMetric.value = metric
     }
 
-
     // Computed statistics
     val filteredWorkouts = combine(
         allWorkouts,
@@ -101,7 +105,6 @@ class StatisticsViewModel @Inject constructor(
             Log.d(TAG, "Progress data result: ${result.size} exercises")
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-
 
     val basicStats = filteredWorkouts.map { workouts ->
         val totalWorkouts = workouts.size
@@ -230,14 +233,154 @@ class StatisticsViewModel @Inject constructor(
         selectedExercise,
         allWorkouts,
         selectedTimePeriod,
-        selectedProgressMetric // DODAJ TEN PARAMETR!
+        selectedProgressMetric
     ) { exercise, workouts, timePeriod, metric ->
         if (exercise != null) {
-            calculateExerciseStatistics(exercise, workouts, timePeriod, metric) // PRZEKAŻ METRYKĘ
+            calculateExerciseStatistics(exercise, workouts, timePeriod, metric)
         } else {
             null
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    // ===== NOWE METODY DLA PROFILU =====
+
+    /**
+     * Pobiera główną grupę mięśniową dla ćwiczenia z cache lub bazy danych
+     */
+    private suspend fun getPrimaryMuscleForExercise(exerciseId: String): String {
+        return try {
+            // Sprawdź cache
+            exerciseCache[exerciseId]?.let { exercise ->
+                return exercise.primaryMuscles.firstOrNull() ?: ""
+            }
+
+            // Pobierz z bazy danych
+            val result = exerciseRepository.getExerciseById(exerciseId)
+            if (result.isSuccess) {
+                val exercise = result.getOrNull()!!
+                exerciseCache[exerciseId] = exercise // Dodaj do cache
+                exercise.primaryMuscles.firstOrNull() ?: ""
+            } else {
+                // Fallback do mapowania po nazwie
+                getFallbackMuscleGroup(exerciseId)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting primary muscle for exercise $exerciseId", e)
+            getFallbackMuscleGroup(exerciseId)
+        }
+    }
+
+    /**
+     * Fallback mapowanie gdy nie można pobrać z bazy danych
+     */
+    private fun getFallbackMuscleGroup(exerciseId: String): String {
+        return when {
+            exerciseId.contains("squat", ignoreCase = true) -> "quadriceps"
+            exerciseId.contains("bench", ignoreCase = true) -> "chest"
+            exerciseId.contains("deadlift", ignoreCase = true) -> "hamstrings"
+            exerciseId.contains("press", ignoreCase = true) -> "shoulders"
+            exerciseId.contains("curl", ignoreCase = true) -> "biceps"
+            exerciseId.contains("extension", ignoreCase = true) -> "triceps"
+            exerciseId.contains("row", ignoreCase = true) -> "lats"
+            exerciseId.contains("pull", ignoreCase = true) -> "lats"
+            exerciseId.contains("push", ignoreCase = true) -> "chest"
+            exerciseId.contains("leg", ignoreCase = true) -> "quadriceps"
+            exerciseId.contains("calf", ignoreCase = true) -> "calves"
+            exerciseId.contains("shoulder", ignoreCase = true) -> "shoulders"
+            else -> "other"
+        }
+    }
+
+    /**
+     * Oblicza ulubioną partię mięśniową użytkownika synchronicznie
+     */
+    suspend fun calculateFavoriteMuscleGroup(): String {
+        val workouts = allWorkouts.value
+        if (workouts.isEmpty()) return "Brak danych"
+
+        val muscleGroupCounts = mutableMapOf<String, Int>()
+
+        workouts.forEach { workout ->
+            workout.exercises.forEach { exercise ->
+                val primaryMuscle = getPrimaryMuscleForExercise(exercise.exerciseId)
+                if (primaryMuscle.isNotEmpty()) {
+                    muscleGroupCounts[primaryMuscle] = muscleGroupCounts.getOrDefault(primaryMuscle, 0) + 1
+                }
+            }
+        }
+
+        val favoriteGroup = muscleGroupCounts.maxByOrNull { it.value }?.key
+        return translateMuscleGroup(favoriteGroup ?: "other")
+    }
+
+    /**
+     * Pobiera podstawowe statystyki użytkownika dla profilu
+     */
+    fun getUserBasicStats(): StateFlow<UserBasicStats> = combine(
+        allWorkouts,
+        userStats
+    ) { workouts, stats ->
+        val completedWorkouts = workouts.filter { it.endTime != null }
+
+        // Oblicz ulubioną grupę mięśniową w tle
+        var favoriteMuscle = "Ładowanie..."
+        viewModelScope.launch {
+            try {
+                favoriteMuscle = calculateFavoriteMuscleGroup()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calculating favorite muscle group", e)
+                favoriteMuscle = "Błąd"
+            }
+        }
+
+        UserBasicStats(
+            totalWorkouts = completedWorkouts.size,
+            currentLevel = stats?.level ?: 1,
+            currentXP = stats?.xp ?: 0,
+            favoriteMuscleGroup = favoriteMuscle,
+            totalWorkoutTime = completedWorkouts.sumOf { it.duration }
+        )
+    }.stateIn(viewModelScope, SharingStarted.Lazily, UserBasicStats())
+
+    /**
+     * Model danych dla podstawowych statystyk użytkownika
+     */
+    data class UserBasicStats(
+        val totalWorkouts: Int = 0,
+        val currentLevel: Int = 1,
+        val currentXP: Int = 0,
+        val favoriteMuscleGroup: String = "Brak danych",
+        val totalWorkoutTime: Long = 0
+    )
+
+    /**
+     * Tłumaczy angielskie nazwy grup mięśniowych na polskie
+     */
+    private fun translateMuscleGroup(muscle: String): String {
+        return when (muscle.lowercase()) {
+            "chest" -> "Klatka"
+            "back", "lats", "middle back", "lower back" -> "Plecy"
+            "legs", "quadriceps", "hamstrings" -> "Nogi"
+            "shoulders" -> "Barki"
+            "biceps" -> "Biceps"
+            "triceps" -> "Triceps"
+            "abs", "abdominals" -> "Brzuch"
+            "glutes" -> "Pośladki"
+            "calves" -> "Łydki"
+            "forearms" -> "Przedramiona"
+            "traps" -> "Kaptur"
+            else -> "Inne"
+        }
+    }
+
+    /**
+     * Metoda do czyszczenia cache (przydatna przy testach)
+     */
+    fun clearExerciseCache() {
+        exerciseCache.clear()
+    }
+
+    // ===== POZOSTAŁE METODY (bez zmian) =====
 
     fun loadInitialData() {
         viewModelScope.launch {
@@ -344,8 +487,6 @@ class StatisticsViewModel @Inject constructor(
         return workoutActivity.value
     }
 
-
-
     @Deprecated("Use reactive categoryDistribution StateFlow instead")
     fun calculateCategoryDistribution(): List<CategoryDistribution> {
         return categoryDistribution.value
@@ -355,8 +496,6 @@ class StatisticsViewModel @Inject constructor(
     fun calculateExerciseDistribution(): List<ExerciseDistribution> {
         return exerciseDistribution.value
     }
-
-    // Calculate progress data for exercises
 
     @Deprecated("Use reactive progressData StateFlow instead")
     fun calculateProgressData(): List<ProgressData> {
@@ -394,6 +533,7 @@ class StatisticsViewModel @Inject constructor(
             progressPoints = progressPoints
         )
     }
+
 
     private fun calculateWeeklyProgressPointsForMetric(
         workouts: List<CompletedWorkout>,
@@ -698,7 +838,6 @@ class StatisticsViewModel @Inject constructor(
         workouts: List<CompletedWorkout>,
         exerciseId: String
     ): List<ProgressPoint> {
-        // Grupuj według miesięcy i pobierz najlepszy wynik dla każdego miesiąca
         val monthNames = listOf("Sty", "Lut", "Mar", "Kwi", "Maj", "Cze", "Lip", "Sie", "Wrz", "Paź", "Lis", "Gru")
 
         return workouts.mapNotNull { workout ->
@@ -731,7 +870,6 @@ class StatisticsViewModel @Inject constructor(
         timePeriod: TimePeriod,
         metric: ProgressMetric
     ): ExerciseStatisticsData? {
-        // WSZYSTKIE treningi (dla Personal Record i Max 1RM)
         val allExerciseWorkouts = allWorkouts
             .filter { workout -> workout.exercises.any { it.exerciseId == exercise.id } }
 
@@ -744,7 +882,6 @@ class StatisticsViewModel @Inject constructor(
 
         if (allSetsEver.isEmpty()) return null
 
-        // FILTROWANE treningi (dla pozostałych statystyk)
         val filteredWorkouts = filterWorkoutsByTimePeriod(allWorkouts, timePeriod)
         val exerciseWorkouts = filteredWorkouts
             .filter { workout -> workout.exercises.any { it.exerciseId == exercise.id } }
@@ -758,14 +895,10 @@ class StatisticsViewModel @Inject constructor(
 
         if (allSets.isEmpty()) return null
 
-        // === PERSONAL RECORDS (wszystkie dane, niezależnie od okresu) ===
         val personalBestWeightSet = allSetsEver.maxByOrNull { it.weight }
         val personalBestWeight = personalBestWeightSet?.weight ?: 0.0
         val personalBest1RM = allSetsEver.maxOfOrNull { calculate1RM(it.weight, it.reps) } ?: 0.0
 
-        // === STATYSTYKI DLA WYBRANEGO OKRESU ===
-
-        // Total Reps = suma wszystkich powtórzeń w wybranym okresie
         val totalReps = allSets.sumOf { it.reps }
 
         val averageWeight = allSets.map { it.weight }.average()
@@ -774,12 +907,10 @@ class StatisticsViewModel @Inject constructor(
             workout.exercises.filter { it.exerciseId == exercise.id }.sumOf { it.sets.size }
         }.average()
 
-        // Pozostałe statystyki dla wybranego okresu
         val average1RM = allSets.map { calculate1RM(it.weight, it.reps) }.average()
         val personalBestVolume = allSets.maxOfOrNull { calculateVolume(it.weight, it.reps) } ?: 0.0
         val averageVolume = allSets.map { calculateVolume(it.weight, it.reps) }.average()
 
-        // Oblicz tonaż na trening (dla wybranego okresu)
         val workoutTonnages = exerciseWorkouts.map { workout ->
             val exerciseSets = workout.exercises
                 .filter { it.exerciseId == exercise.id }
@@ -800,28 +931,27 @@ class StatisticsViewModel @Inject constructor(
         return ExerciseStatisticsData(
             exerciseId = exercise.id,
             exerciseName = exercise.name,
-            personalBestWeight = personalBestWeight, // Z wszystkich danych
-            totalReps = totalReps, // POPRAWKA: Używamy poprawnej nazwy parametru
-            personalBest1RM = personalBest1RM, // Z wszystkich danych
+            personalBestWeight = personalBestWeight,
+            totalReps = totalReps,
+            personalBest1RM = personalBest1RM,
             personalBestVolume = personalBestVolume,
             personalBestTonnage = personalBestTonnage,
-            averageWeight = averageWeight, // Z wybranego okresu
-            averageReps = averageReps.toInt(), // Z wybranego okresu
+            averageWeight = averageWeight,
+            averageReps = averageReps.toInt(),
             average1RM = average1RM,
             averageVolume = averageVolume,
             averageTonnage = averageTonnage,
-            averageSets = averageSets, // Z wybranego okresu
+            averageSets = averageSets,
             progressPoints = progressPoints
         )
     }
-
 
     private fun filterWorkoutsByTimePeriod(
         workouts: List<CompletedWorkout>,
         timePeriod: TimePeriod
     ): List<CompletedWorkout> {
         if (timePeriod == TimePeriod.ALL) {
-            return workouts // Zwróć wszystkie treningi bez filtrowania
+            return workouts
         }
 
         val now = Calendar.getInstance()
@@ -832,7 +962,7 @@ class StatisticsViewModel @Inject constructor(
             TimePeriod.MONTH -> startTime.add(Calendar.MONTH, -1)
             TimePeriod.THREE_MONTHS -> startTime.add(Calendar.MONTH, -3)
             TimePeriod.YEAR -> startTime.add(Calendar.YEAR, -1)
-            TimePeriod.ALL -> return workouts // Już obsłużone powyżej
+            TimePeriod.ALL -> return workouts
         }
 
         return workouts.filter { workout ->
@@ -842,12 +972,11 @@ class StatisticsViewModel @Inject constructor(
         }
     }
 
-    // Helper methods for calculating activity data - POPRAWIONE
+    // Helper methods for calculating activity data
     private fun calculateWeeklyActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
         val daysOfWeek = listOf("Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd")
         val today = Calendar.getInstance()
 
-        // Znajdź poniedziałek bieżącego tygodnia
         val startOfWeek = Calendar.getInstance().apply {
             time = today.time
             val dayOfWeek = get(Calendar.DAY_OF_WEEK)
@@ -895,7 +1024,6 @@ class StatisticsViewModel @Inject constructor(
                     val workoutCalendar = Calendar.getInstance()
                     workoutCalendar.timeInMillis = endTime.seconds * 1000
 
-                    // Sprawdzamy czy trening jest z bieżącego miesiąca i roku
                     val workoutMonth = workoutCalendar.get(Calendar.MONTH)
                     val workoutYear = workoutCalendar.get(Calendar.YEAR)
                     val weekOfMonth = workoutCalendar.get(Calendar.WEEK_OF_MONTH)
@@ -918,7 +1046,6 @@ class StatisticsViewModel @Inject constructor(
         val currentCalendar = Calendar.getInstance()
 
         return (0..2).map { monthOffset ->
-            // Tworzymy nowy Calendar dla każdej iteracji
             val targetCalendar = Calendar.getInstance().apply {
                 time = currentCalendar.time
                 add(Calendar.MONTH, -monthOffset)
@@ -940,7 +1067,7 @@ class StatisticsViewModel @Inject constructor(
                 label = monthNames[targetMonth],
                 minutes = monthWorkouts.sumOf { it.duration }.toInt()
             )
-        }.reversed() // Odwracamy żeby mieć chronologiczny porządek
+        }.reversed()
     }
 
     private fun calculateYearlyActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
@@ -967,14 +1094,13 @@ class StatisticsViewModel @Inject constructor(
     private fun calculateAllTimeActivity(workouts: List<CompletedWorkout>): List<ActivityData> {
         if (workouts.isEmpty()) return emptyList()
 
-        // Grupuj treningi według roku
         val workoutsByYear = workouts.groupBy { workout ->
             workout.endTime?.let { endTime ->
                 val calendar = Calendar.getInstance()
                 calendar.timeInMillis = endTime.seconds * 1000
                 calendar.get(Calendar.YEAR)
             } ?: 0
-        }.filterKeys { it != 0 } // Usuń treningi bez daty
+        }.filterKeys { it != 0 }
 
         return workoutsByYear.map { (year, yearWorkouts) ->
             ActivityData(
@@ -989,7 +1115,6 @@ class StatisticsViewModel @Inject constructor(
         workouts: List<CompletedWorkout>,
         exerciseId: String
     ): List<ProgressPoint> {
-        // Group by day and get best weight for each day
         return workouts.mapNotNull { workout ->
             val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
             val bestSet = exerciseData?.sets?.maxByOrNull { it.weight }
@@ -1013,7 +1138,6 @@ class StatisticsViewModel @Inject constructor(
         workouts: List<CompletedWorkout>,
         exerciseId: String
     ): List<ProgressPoint> {
-        // Group by week and get best weight for each week
         return workouts.mapNotNull { workout ->
             val exerciseData = workout.exercises.find { it.exerciseId == exerciseId }
             val bestSet = exerciseData?.sets?.maxByOrNull { it.weight }
@@ -1102,7 +1226,7 @@ class StatisticsViewModel @Inject constructor(
         return if (reps == 1) {
             weight
         } else if (reps > 10) {
-            weight / (1.0278 - (0.0278 * 10)) // Limitujemy do 10 reps
+            weight / (1.0278 - (0.0278 * 10))
         } else {
             weight / (1.0278 - (0.0278 * reps))
         }

@@ -25,6 +25,7 @@ import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.AchievementService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ import javax.inject.Inject
 class AuthViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val auth: FirebaseAuth,
+    private val achievementService: AchievementService, // DODANY DEPENDENCY
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -127,6 +129,10 @@ class AuthViewModel @Inject constructor(
             val currentUser = auth.currentUser
             if (currentUser != null) {
                 Log.d(TAG, "Current user found: ${currentUser.uid}")
+
+                // Inicjalizuj domyślne osiągnięcia przy każdym logowaniu
+                initializeAchievements()
+
                 // Aktualizacja czasu ostatniego logowania
                 try {
                     val result = userRepository.updateLastLogin(currentUser.uid)
@@ -158,6 +164,23 @@ class AuthViewModel @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error during initial auth check", e)
             _authState.value = AuthState.Error("Error checking authentication status: ${e.message}")
+        }
+    }
+
+    /**
+     * Inicjalizuje domyślne osiągnięcia w systemie
+     */
+    private suspend fun initializeAchievements() {
+        try {
+            Log.d(TAG, "Initializing default achievements...")
+            val result = achievementService.initializeDefaultAchievements()
+            if (result.isSuccess) {
+                Log.d(TAG, "Default achievements initialized successfully")
+            } else {
+                Log.e(TAG, "Failed to initialize default achievements: ${result.exceptionOrNull()?.message}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception initializing achievements", e)
         }
     }
 
@@ -231,6 +254,10 @@ class AuthViewModel @Inject constructor(
 
                 result.user?.let {
                     Log.d(TAG, "Email sign in successful for user: ${it.uid}")
+
+                    // Inicjalizuj osiągnięcia po udanym logowaniu
+                    initializeAchievements()
+
                     try {
                         val updateResult = userRepository.updateLastLogin(it.uid)
                         if (updateResult.isSuccess) {
@@ -268,7 +295,6 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-
 
     /**
      * Resetowanie hasła (wysyłanie emaila resetującego)
@@ -374,6 +400,9 @@ class AuthViewModel @Inject constructor(
                 // Sprawdź czy to nowy użytkownik
                 val isNewUser = result.additionalUserInfo?.isNewUser == true
                 Log.d(TAG, "Is new user: $isNewUser")
+
+                // Inicjalizuj osiągnięcia dla każdego użytkownika (nowego i istniejącego)
+                initializeAchievements()
 
                 if (isNewUser) {
                     Log.d(TAG, "Creating new user profile in Firestore for ${user.uid}")
@@ -482,6 +511,9 @@ class AuthViewModel @Inject constructor(
                     val isNewUser = result.additionalUserInfo?.isNewUser == true
                     Log.d(TAG, "Is new user: $isNewUser")
 
+                    // Inicjalizuj osiągnięcia dla każdego użytkownika
+                    initializeAchievements()
+
                     if (isNewUser) {
                         Log.d(TAG, "Creating new user profile in Firestore")
                         try {
@@ -530,6 +562,7 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
+
     /**
      * Rejestracja użytkownika przez email i hasło
      */
@@ -550,6 +583,9 @@ class AuthViewModel @Inject constructor(
                 val user = result.user
                 if (user != null) {
                     try {
+                        // Inicjalizuj osiągnięcia dla nowego użytkownika
+                        initializeAchievements()
+
                         userRepository.createUser(user)
                         saveAuthState(true)
                         _authState.value = AuthState.Authenticated(user)
@@ -602,12 +638,12 @@ class AuthViewModel @Inject constructor(
         saveAuthState(false)
         _authState.value = AuthState.NotAuthenticated
     }
+
     fun resetAuthStateToNotAuthenticated() {
         if (_authState.value is AuthState.Error) {
             _authState.value = AuthState.NotAuthenticated
         }
     }
-
 }
 
 sealed class AuthState {

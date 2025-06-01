@@ -12,6 +12,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.*
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.AchievementService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -68,7 +69,7 @@ object RepositoryModule {
         userAchievementDao: UserAchievementDao,
         workoutTemplateDao: WorkoutTemplateDao,
         workoutDao: WorkoutDao,
-        workoutCategoryDao: WorkoutCategoryDao, // Dodany parametr
+        workoutCategoryDao: WorkoutCategoryDao,
         remoteDataSource: RemoteUserDataSource,
         mappers: UserMappers,
         networkManager: NetworkConnectivityManager
@@ -80,7 +81,6 @@ object RepositoryModule {
         )
     }
 
-    // Dodane nowe repozytorium
     @Provides
     @Singleton
     fun provideWorkoutCategoryRepository(
@@ -134,18 +134,28 @@ object RepositoryModule {
         userProfileDao: UserProfileDao,
         userStatsDao: UserStatsDao,
         userAchievementDao: UserAchievementDao,
-        workoutCategoryDao: WorkoutCategoryDao, // Dodane
+        workoutCategoryDao: WorkoutCategoryDao,
         syncManager: SyncManager,
         mappers: UserMappers,
         workoutRepository: WorkoutRepository,
-        workoutCategoryRepository: WorkoutCategoryRepository // Dodane
+        workoutCategoryRepository: WorkoutCategoryRepository,
+        achievementRepository: AchievementRepository
     ): UserRepository {
         return UserRepository(
             auth, remoteDataSource, userDao, userAuthDao, userProfileDao,
             userStatsDao, userAchievementDao, workoutCategoryDao, syncManager,
-            mappers, workoutRepository, workoutCategoryRepository
+            mappers, workoutRepository, workoutCategoryRepository, achievementRepository
         )
     }
 
-
+    // NOWY SERWIS OSIĄGNIĘĆ
+    @Provides
+    @Singleton
+    fun provideAchievementService(
+        achievementRepository: AchievementRepository,
+        workoutRepository: WorkoutRepository,
+        userRepository: UserRepository
+    ): AchievementService {
+        return AchievementService(achievementRepository, workoutRepository, userRepository)
+    }
 }

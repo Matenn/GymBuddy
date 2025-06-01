@@ -25,4 +25,5 @@ object NavigationRoutes {
     const val CREATE_WORKOUT_TEMPLATE = "create_workout_template"
     const val EDIT_WORKOUT_TEMPLATE = "edit_workout_template/{templateId}"
     const val CATEGORY_MANAGEMENT = "category_management"
+
 }
