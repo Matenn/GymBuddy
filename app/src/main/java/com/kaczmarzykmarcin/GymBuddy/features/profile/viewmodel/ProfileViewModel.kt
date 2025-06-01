@@ -21,8 +21,8 @@ import javax.inject.Inject
 class ProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val achievementRepository: AchievementRepository,
-    private val achievementService: AchievementService,
-    private val auth: FirebaseAuth // Używamy FirebaseAuth bezpośrednio
+    private val achievementService: AchievementService
+    // USUNIĘTO: FirebaseAuth - wylogowanie jest teraz obsługiwane przez AuthViewModel
 ) : ViewModel() {
 
     private val TAG = "ProfileViewModel"
@@ -150,18 +150,5 @@ class ProfileViewModel @Inject constructor(
         loadUserData(userId, forceRefresh = true)
     }
 
-    /**
-     * Wylogowuje użytkownika
-     */
-    fun signOut() {
-        viewModelScope.launch {
-            try {
-                auth.signOut()
-                clearCache()
-                Log.d(TAG, "User signed out successfully")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error signing out", e)
-            }
-        }
-    }
+    // USUNIĘTO: signOut() - wylogowanie jest teraz obsługiwane przez AuthViewModel
 }

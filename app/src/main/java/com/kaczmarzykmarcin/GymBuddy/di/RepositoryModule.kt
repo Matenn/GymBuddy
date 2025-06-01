@@ -67,6 +67,8 @@ object RepositoryModule {
         userProfileDao: UserProfileDao,
         userStatsDao: UserStatsDao,
         userAchievementDao: UserAchievementDao,
+        achievementDefinitionDao: AchievementDefinitionDao,
+        achievementProgressDao: AchievementProgressDao,
         workoutTemplateDao: WorkoutTemplateDao,
         workoutDao: WorkoutDao,
         workoutCategoryDao: WorkoutCategoryDao,
@@ -76,7 +78,8 @@ object RepositoryModule {
     ): SyncManager {
         return SyncManager(
             context, userDao, userAuthDao, userProfileDao, userStatsDao,
-            userAchievementDao, workoutTemplateDao, workoutDao, workoutCategoryDao,
+            userAchievementDao, achievementDefinitionDao, achievementProgressDao,
+            workoutTemplateDao, workoutDao, workoutCategoryDao,
             remoteDataSource, mappers, networkManager
         )
     }
@@ -98,13 +101,18 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideAchievementRepository(
+        achievementDefinitionDao: AchievementDefinitionDao,
+        achievementProgressDao: AchievementProgressDao,
         userAchievementDao: UserAchievementDao,
         remoteDataSource: RemoteUserDataSource,
         syncManager: SyncManager,
         networkManager: NetworkConnectivityManager,
         mappers: UserMappers
     ): AchievementRepository {
-        return AchievementRepository(userAchievementDao, remoteDataSource, syncManager, networkManager, mappers)
+        return AchievementRepository(
+            achievementDefinitionDao, achievementProgressDao, userAchievementDao,
+            remoteDataSource, syncManager, networkManager, mappers
+        )
     }
 
     @Provides
@@ -148,7 +156,7 @@ object RepositoryModule {
         )
     }
 
-    // NOWY SERWIS OSIĄGNIĘĆ
+    // SERWIS OSIĄGNIĘĆ - ZAKTUALIZOWANY
     @Provides
     @Singleton
     fun provideAchievementService(

@@ -22,6 +22,7 @@ object UserDatabaseModule {
         return UserDatabase.getInstance(context)
     }
 
+    // User-related DAOs
     @Provides
     @Singleton
     fun provideUserDao(database: UserDatabase): UserDao {
@@ -52,6 +53,20 @@ object UserDatabaseModule {
         return database.userAchievementDao()
     }
 
+    // NEW: Achievement system DAOs (required for new achievement system)
+    @Provides
+    @Singleton
+    fun provideAchievementDefinitionDao(database: UserDatabase): AchievementDefinitionDao {
+        return database.achievementDefinitionDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAchievementProgressDao(database: UserDatabase): AchievementProgressDao {
+        return database.achievementProgressDao()
+    }
+
+    // Workout-related DAOs
     @Provides
     @Singleton
     fun provideWorkoutTemplateDao(database: UserDatabase): WorkoutTemplateDao {
@@ -62,5 +77,12 @@ object UserDatabaseModule {
     @Singleton
     fun provideWorkoutDao(database: UserDatabase): WorkoutDao {
         return database.workoutDao()
+    }
+
+    // NEW: WorkoutCategoryDao (was missing)
+    @Provides
+    @Singleton
+    fun provideWorkoutCategoryDao(database: UserDatabase): WorkoutCategoryDao {
+        return database.workoutCategoryDao()
     }
 }

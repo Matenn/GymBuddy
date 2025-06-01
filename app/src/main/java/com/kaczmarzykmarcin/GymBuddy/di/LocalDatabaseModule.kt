@@ -5,8 +5,6 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.LocalExerciseDatabase
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.dao.ExerciseDao
-import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.UserDatabase
-import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.WorkoutCategoryDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -14,6 +12,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+/**
+ * Module providing non-user database dependencies:
+ * - Gson for JSON serialization
+ * - Exercise database and DAO
+ *
+ * User database dependencies are provided by UserDatabaseModule
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 object LocalDatabaseModule {
@@ -41,9 +46,6 @@ object LocalDatabaseModule {
         return database.exerciseDao()
     }
 
-    @Provides
-    @Singleton
-    fun provideWorkoutCategoryDao(userDatabase: UserDatabase): WorkoutCategoryDao {
-        return userDatabase.workoutCategoryDao()
-    }
+    // REMOVED: All UserDatabase and UserDAO dependencies
+    // These are now provided by UserDatabaseModule to avoid duplicates
 }

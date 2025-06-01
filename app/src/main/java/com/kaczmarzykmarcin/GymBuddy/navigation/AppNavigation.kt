@@ -258,10 +258,12 @@ fun AppNavigation(navController: NavHostController) {
                 fadeOut(animationSpec = tween(300))
             }
         ) {
-            Log.d(TAG, "Loading StatisticsScreen")
-            ProfileScreen(navController)
+            Log.d(TAG, "Loading ProfileScreen")
+            // ZMIANA: Przekazujemy authViewModel do ProfileScreen
+            ProfileScreen(
+                navController = navController,
+                authViewModel = authViewModel
+            )
         }
     }
-
-
 }

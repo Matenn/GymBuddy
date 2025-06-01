@@ -1,4 +1,4 @@
-// AchievementService.kt - serwis do zarządzania osiągnięciami
+// AchievementService.kt - poprawione sprawdzanie osiągnięć
 package com.kaczmarzykmarcin.GymBuddy.features.achievements.domain
 
 import android.util.Log
@@ -22,9 +22,17 @@ class AchievementService @Inject constructor(
 
     /**
      * Inicjalizuje domyślne osiągnięcia w systemie
+     * ZMIANA: Sprawdza czy już istnieją w lokalnej bazie
      */
     suspend fun initializeDefaultAchievements(): Result<Unit> {
         return try {
+            // Sprawdź czy już są definicje w lokalnej bazie
+            val existing = achievementRepository.getAllAchievementDefinitions().getOrNull() ?: emptyList()
+            if (existing.isNotEmpty()) {
+                Log.d(TAG, "Default achievements already exist (${existing.size} found)")
+                return Result.success(Unit)
+            }
+
             val defaultAchievements = listOf(
                 AchievementDefinition(
                     id = "first_workout",
@@ -82,12 +90,12 @@ class AchievementService @Inject constructor(
                 )
             )
 
-            // Zapisz domyślne osiągnięcia w repozytorium
+            // Zapisz domyślne osiągnięcia w repozytorium (local-first)
             defaultAchievements.forEach { achievement ->
                 achievementRepository.createOrUpdateAchievementDefinition(achievement)
             }
 
-            Log.d(TAG, "Default achievements initialized successfully")
+            Log.d(TAG, "Default achievements initialized successfully (${defaultAchievements.size} created)")
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize default achievements", e)
@@ -97,34 +105,52 @@ class AchievementService @Inject constructor(
 
     /**
      * Sprawdza i aktualizuje postęp w osiągnięciach po ukończeniu treningu
+     * ZMIANA: Lepsze error handling dla local-first
      */
     suspend fun checkAndUpdateAchievements(userId: String, completedWorkout: CompletedWorkout): List<AchievementWithProgress> {
         val newlyCompleted = mutableListOf<AchievementWithProgress>()
 
         try {
-            // Pobierz wszystkie definicje osiągnięć
-            val definitions = achievementRepository.getAllAchievementDefinitions().getOrNull() ?: return emptyList()
+            // Pobierz wszystkie definicje osiągnięć z lokalnej bazy
+            val definitionsResult = achievementRepository.getAllAchievementDefinitions()
+            if (definitionsResult.isFailure) {
+                Log.e(TAG, "Failed to get achievement definitions")
+                return emptyList()
+            }
+
+            val definitions = definitionsResult.getOrNull() ?: emptyList()
 
             for (definition in definitions.filter { it.isActive }) {
-                val newProgress = when (definition.type) {
-                    AchievementType.WORKOUT_COUNT -> checkWorkoutCountAchievement(userId, definition)
-                    AchievementType.WORKOUT_STREAK -> checkWorkoutStreakAchievement(userId, definition)
-                    AchievementType.MORNING_WORKOUTS -> checkMorningWorkoutAchievement(userId, definition, completedWorkout)
-                    AchievementType.WORKOUT_DURATION -> checkWorkoutDurationAchievement(userId, definition, completedWorkout)
-                    AchievementType.EXERCISE_WEIGHT -> checkExerciseWeightAchievement(userId, definition, completedWorkout)
-                    AchievementType.FIRST_TIME -> checkFirstTimeAchievement(userId, definition)
-                }
-
-                newProgress?.let { progress ->
-                    // Zapisz postęp
-                    achievementRepository.updateAchievementProgress(progress)
-
-                    // Jeśli osiągnięcie zostało ukończone, dodaj XP użytkownikowi
-                    if (progress.isCompleted && progress.completedAt != null) {
-                        userRepository.addXP(userId, definition.xpReward)
-                        newlyCompleted.add(AchievementWithProgress(definition, progress))
-                        Log.d(TAG, "Achievement completed: ${definition.title} (+${definition.xpReward} XP)")
+                try {
+                    val newProgress = when (definition.type) {
+                        AchievementType.WORKOUT_COUNT -> checkWorkoutCountAchievement(userId, definition)
+                        AchievementType.WORKOUT_STREAK -> checkWorkoutStreakAchievement(userId, definition)
+                        AchievementType.MORNING_WORKOUTS -> checkMorningWorkoutAchievement(userId, definition, completedWorkout)
+                        AchievementType.WORKOUT_DURATION -> checkWorkoutDurationAchievement(userId, definition, completedWorkout)
+                        AchievementType.EXERCISE_WEIGHT -> checkExerciseWeightAchievement(userId, definition, completedWorkout)
+                        AchievementType.FIRST_TIME -> null // POPRAWKA: Nie sprawdzamy FIRST_TIME automatycznie
                     }
+
+                    newProgress?.let { progress ->
+                        // Zapisz postęp (local-first)
+                        val saveResult = achievementRepository.updateAchievementProgress(progress)
+
+                        if (saveResult.isSuccess) {
+                            // Jeśli osiągnięcie zostało ukończone, dodaj XP użytkownikowi
+                            if (progress.isCompleted && progress.completedAt != null) {
+                                addXPToUser(userId, definition.xpReward)
+                                newlyCompleted.add(AchievementWithProgress(definition, progress))
+                                Log.d(TAG, "Achievement completed: ${definition.title} (+${definition.xpReward} XP)")
+                            } else {
+                                Log.d(TAG, "Achievement progress updated: ${definition.title}")
+                            }
+                        } else {
+                            Log.w(TAG, "Failed to save progress for achievement: ${definition.id}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error checking achievement ${definition.id}", e)
+                    // Kontynuuj sprawdzanie innych osiągnięć
                 }
             }
         } catch (e: Exception) {
@@ -134,49 +160,96 @@ class AchievementService @Inject constructor(
         return newlyCompleted
     }
 
+    /**
+     * NOWA METODA: Dodaje XP użytkownikowi (kompatybilna z local-first)
+     */
+    private suspend fun addXPToUser(userId: String, xpAmount: Int) {
+        try {
+            // Pobierz aktualne statystyki z UserRepository
+            val userStatsResult = userRepository.getUserStats(userId)
+            val currentStats = userStatsResult.getOrNull()
+
+            if (currentStats != null) {
+                val newXP = currentStats.xp + xpAmount
+                val newLevel = calculateLevelFromXP(newXP)
+
+                val updatedStats = currentStats.copy(
+                    xp = newXP,
+                    level = newLevel
+                )
+
+                // Aktualizuj statystyki (local-first)
+                userRepository.updateUserStats(updatedStats)
+                Log.d(TAG, "Added $xpAmount XP to user $userId (total: $newXP, level: $newLevel)")
+            } else {
+                Log.w(TAG, "Could not find user stats for user: $userId")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add XP to user $userId", e)
+        }
+    }
+
+    /**
+     * NOWA METODA: Oblicza poziom na podstawie XP
+     */
+    private fun calculateLevelFromXP(xp: Int): Int {
+        // Prosta formuła: poziom = sqrt(XP / 100) + 1
+        return (kotlin.math.sqrt(xp.toDouble() / 100.0) + 1).toInt()
+    }
+
     private suspend fun checkWorkoutCountAchievement(userId: String, definition: AchievementDefinition): AchievementProgress? {
-        val workouts = workoutRepository.getUserWorkoutHistory(userId).first()
-        val completedWorkouts = workouts.filter { it.endTime != null }
-        val currentCount = completedWorkouts.size
+        try {
+            val workouts = workoutRepository.getUserWorkoutHistory(userId).first()
+            val completedWorkouts = workouts.filter { it.endTime != null }
+            val currentCount = completedWorkouts.size
 
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
+            val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
 
-        return if (existingProgress == null || existingProgress.currentValue != currentCount) {
-            val isCompleted = currentCount >= definition.targetValue
-            AchievementProgress(
-                id = existingProgress?.id ?: "",
-                userId = userId,
-                achievementId = definition.id,
-                currentValue = currentCount,
-                isCompleted = isCompleted,
-                completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
-                lastUpdated = Timestamp.now()
-            )
-        } else null
+            return if (existingProgress == null || existingProgress.currentValue != currentCount) {
+                val isCompleted = currentCount >= definition.targetValue
+                AchievementProgress(
+                    id = existingProgress?.id ?: "",
+                    userId = userId,
+                    achievementId = definition.id,
+                    currentValue = currentCount,
+                    isCompleted = isCompleted,
+                    completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
+                    lastUpdated = Timestamp.now()
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking workout count achievement", e)
+            return null
+        }
     }
 
     private suspend fun checkWorkoutStreakAchievement(userId: String, definition: AchievementDefinition): AchievementProgress? {
-        val workouts = workoutRepository.getUserWorkoutHistory(userId).first()
-        val completedWorkouts = workouts
-            .filter { it.endTime != null }
-            .sortedByDescending { it.endTime?.seconds ?: 0 }
+        try {
+            val workouts = workoutRepository.getUserWorkoutHistory(userId).first()
+            val completedWorkouts = workouts
+                .filter { it.endTime != null }
+                .sortedByDescending { it.endTime?.seconds ?: 0 }
 
-        val currentStreak = calculateCurrentStreak(completedWorkouts)
+            val currentStreak = calculateCurrentStreak(completedWorkouts)
 
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
+            val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
 
-        return if (existingProgress == null || existingProgress.currentValue != currentStreak) {
-            val isCompleted = currentStreak >= definition.targetValue
-            AchievementProgress(
-                id = existingProgress?.id ?: "",
-                userId = userId,
-                achievementId = definition.id,
-                currentValue = currentStreak,
-                isCompleted = isCompleted,
-                completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
-                lastUpdated = Timestamp.now()
-            )
-        } else null
+            return if (existingProgress == null || existingProgress.currentValue != currentStreak) {
+                val isCompleted = currentStreak >= definition.targetValue
+                AchievementProgress(
+                    id = existingProgress?.id ?: "",
+                    userId = userId,
+                    achievementId = definition.id,
+                    currentValue = currentStreak,
+                    isCompleted = isCompleted,
+                    completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
+                    lastUpdated = Timestamp.now()
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking workout streak achievement", e)
+            return null
+        }
     }
 
     private suspend fun checkMorningWorkoutAchievement(
@@ -184,30 +257,35 @@ class AchievementService @Inject constructor(
         definition: AchievementDefinition,
         completedWorkout: CompletedWorkout
     ): AchievementProgress? {
-        // Sprawdź czy trening był poranny (przed 10:00)
-        val workoutTime = completedWorkout.endTime?.toDate()
-        val isMorningWorkout = workoutTime?.let {
-            val calendar = Calendar.getInstance()
-            calendar.time = it
-            calendar.get(Calendar.HOUR_OF_DAY) < 10
-        } ?: false
+        try {
+            // Sprawdź czy trening był poranny (przed 10:00)
+            val workoutTime = completedWorkout.endTime?.toDate()
+            val isMorningWorkout = workoutTime?.let {
+                val calendar = Calendar.getInstance()
+                calendar.time = it
+                calendar.get(Calendar.HOUR_OF_DAY) < 10
+            } ?: false
 
-        if (!isMorningWorkout) return null
+            if (!isMorningWorkout) return null
 
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
-        val newCount = (existingProgress?.currentValue ?: 0) + 1
+            val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
+            val newCount = (existingProgress?.currentValue ?: 0) + 1
 
-        val isCompleted = newCount >= definition.targetValue
+            val isCompleted = newCount >= definition.targetValue
 
-        return AchievementProgress(
-            id = existingProgress?.id ?: "",
-            userId = userId,
-            achievementId = definition.id,
-            currentValue = newCount,
-            isCompleted = isCompleted,
-            completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
-            lastUpdated = Timestamp.now()
-        )
+            return AchievementProgress(
+                id = existingProgress?.id ?: "",
+                userId = userId,
+                achievementId = definition.id,
+                currentValue = newCount,
+                isCompleted = isCompleted,
+                completedAt = if (isCompleted && existingProgress?.isCompleted != true) Timestamp.now() else existingProgress?.completedAt,
+                lastUpdated = Timestamp.now()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking morning workout achievement", e)
+            return null
+        }
     }
 
     private suspend fun checkWorkoutDurationAchievement(
@@ -215,21 +293,26 @@ class AchievementService @Inject constructor(
         definition: AchievementDefinition,
         completedWorkout: CompletedWorkout
     ): AchievementProgress? {
-        if (completedWorkout.duration < definition.targetValue) return null
+        try {
+            if (completedWorkout.duration < definition.targetValue) return null
 
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
+            val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
 
-        return if (existingProgress?.isCompleted != true) {
-            AchievementProgress(
-                id = existingProgress?.id ?: "",
-                userId = userId,
-                achievementId = definition.id,
-                currentValue = definition.targetValue,
-                isCompleted = true,
-                completedAt = Timestamp.now(),
-                lastUpdated = Timestamp.now()
-            )
-        } else null
+            return if (existingProgress?.isCompleted != true) {
+                AchievementProgress(
+                    id = existingProgress?.id ?: "",
+                    userId = userId,
+                    achievementId = definition.id,
+                    currentValue = definition.targetValue,
+                    isCompleted = true,
+                    completedAt = Timestamp.now(),
+                    lastUpdated = Timestamp.now()
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking workout duration achievement", e)
+            return null
+        }
     }
 
     private suspend fun checkExerciseWeightAchievement(
@@ -237,43 +320,38 @@ class AchievementService @Inject constructor(
         definition: AchievementDefinition,
         completedWorkout: CompletedWorkout
     ): AchievementProgress? {
-        if (definition.exerciseId == null) return null
+        try {
+            if (definition.exerciseId == null) return null
 
-        val exercise = completedWorkout.exercises.find { it.exerciseId == definition.exerciseId }
-        val maxWeight = exercise?.sets?.maxOfOrNull { it.weight } ?: 0.0
+            val exercise = completedWorkout.exercises.find { it.exerciseId == definition.exerciseId }
+            val maxWeight = exercise?.sets?.maxOfOrNull { it.weight } ?: 0.0
 
-        if (maxWeight < definition.targetValue) return null
+            if (maxWeight < definition.targetValue) return null
 
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
+            val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
 
-        return if (existingProgress?.isCompleted != true) {
-            AchievementProgress(
-                id = existingProgress?.id ?: "",
-                userId = userId,
-                achievementId = definition.id,
-                currentValue = maxWeight.toInt(),
-                isCompleted = true,
-                completedAt = Timestamp.now(),
-                lastUpdated = Timestamp.now()
-            )
-        } else null
+            return if (existingProgress?.isCompleted != true) {
+                AchievementProgress(
+                    id = existingProgress?.id ?: "",
+                    userId = userId,
+                    achievementId = definition.id,
+                    currentValue = maxWeight.toInt(),
+                    isCompleted = true,
+                    completedAt = Timestamp.now(),
+                    lastUpdated = Timestamp.now()
+                )
+            } else null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking exercise weight achievement", e)
+            return null
+        }
     }
 
-    private suspend fun checkFirstTimeAchievement(userId: String, definition: AchievementDefinition): AchievementProgress? {
-        val existingProgress = achievementRepository.getAchievementProgress(userId, definition.id).getOrNull()
-
-        return if (existingProgress == null) {
-            AchievementProgress(
-                id = "",
-                userId = userId,
-                achievementId = definition.id,
-                currentValue = 1,
-                isCompleted = true,
-                completedAt = Timestamp.now(),
-                lastUpdated = Timestamp.now()
-            )
-        } else null
-    }
+    /**
+     * POPRAWKA: Usunięta metoda checkFirstTimeAchievement
+     * Osiągnięcia typu FIRST_TIME nie są już sprawdzane automatycznie
+     * Zamiast tego osiągnięcie "Pierwszy trening" używa typu WORKOUT_COUNT z targetValue = 1
+     */
 
     private fun calculateCurrentStreak(workouts: List<CompletedWorkout>): Int {
         if (workouts.isEmpty()) return 0
@@ -315,20 +393,38 @@ class AchievementService @Inject constructor(
 
     /**
      * Pobiera postęp w osiągnięciach dla użytkownika
+     * ZMIANA: Używa nowej metody z AchievementRepository
      */
     suspend fun getUserAchievements(userId: String): Result<List<AchievementWithProgress>> {
         return try {
-            val definitions = achievementRepository.getAllAchievementDefinitions().getOrNull() ?: emptyList()
-            val progresses = achievementRepository.getUserAchievementProgresses(userId).getOrNull() ?: emptyList()
-
-            val achievements = definitions.map { definition ->
-                val progress = progresses.find { it.achievementId == definition.id }
-                AchievementWithProgress(definition, progress)
-            }
-
-            Result.success(achievements)
+            // Używa nowej metody która łączy definicje i postępy z lokalnej bazy
+            achievementRepository.getUserAchievements(userId)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get user achievements", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * NOWA METODA: Pobiera ostatnio zdobyte osiągnięcia
+     */
+    suspend fun getRecentlyCompletedAchievements(userId: String, limit: Int = 5): Result<List<AchievementWithProgress>> {
+        return try {
+            achievementRepository.getRecentlyCompletedAchievements(userId, limit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get recently completed achievements", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * NOWA METODA: Pobiera osiągnięcia w trakcie realizacji
+     */
+    suspend fun getInProgressAchievements(userId: String): Result<List<AchievementWithProgress>> {
+        return try {
+            achievementRepository.getInProgressAchievements(userId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get in progress achievements", e)
             Result.failure(e)
         }
     }

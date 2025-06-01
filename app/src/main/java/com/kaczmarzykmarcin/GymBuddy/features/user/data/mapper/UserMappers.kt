@@ -132,7 +132,7 @@ class UserMappers(private val gson: Gson) {
         )
     }
 
-    // ===== NOWY SYSTEM OSIĄGNIĘĆ =====
+    // ===== NOWY SYSTEM OSIĄGNIĘĆ - ZAKTUALIZOWANE MAPERY =====
 
     // AchievementDefinition
     fun toEntity(model: AchievementDefinition): AchievementDefinitionEntity {

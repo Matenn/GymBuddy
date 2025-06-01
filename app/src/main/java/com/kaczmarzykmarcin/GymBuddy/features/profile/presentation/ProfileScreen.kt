@@ -63,6 +63,7 @@ import androidx.navigation.NavController
 import com.google.firebase.auth.FirebaseAuth
 import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementWithProgress
 import com.kaczmarzykmarcin.GymBuddy.data.model.UserData
+import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.profile.viewmodel.ProfileViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.viewmodel.StatisticsViewModel
 import java.text.SimpleDateFormat
@@ -72,6 +73,7 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     navController: NavController,
+    authViewModel: AuthViewModel, // OBOWIĄZKOWY PARAMETR
     profileViewModel: ProfileViewModel = hiltViewModel(),
     statisticsViewModel: StatisticsViewModel = hiltViewModel()
 ) {
@@ -187,13 +189,14 @@ fun ProfileScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Przycisk wylogowania
+                // Przycisk wylogowania - ZMIENIONY
                 Button(
                     onClick = {
-                        profileViewModel.signOut()
-                        navController.navigate("welcome") {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        // Wyloguj przez AuthViewModel zamiast ProfileViewModel
+                        authViewModel.signOut()
+                        profileViewModel.clearCache()
+                        // Nawigacja zostanie obsłużona automatycznie przez AppNavigation
+                        // po zmianie stanu w AuthViewModel
                     },
                     modifier = Modifier
                         .fillMaxWidth()

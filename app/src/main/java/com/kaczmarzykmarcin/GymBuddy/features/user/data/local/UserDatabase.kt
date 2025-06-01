@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.converter.TimestampConverter
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.converter.MapConverter
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.AchievementDefinitionDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.AchievementProgressDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserAchievementDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserProfileDao
@@ -23,6 +25,8 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.UserAuthEnt
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.CompletedWorkoutEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutCategoryEntity
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemplateEntity
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.AchievementDefinitionEntity
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.AchievementProgressEntity
 
 /**
  * Konfiguracja lokalnej bazy danych Room dla danych użytkownika
@@ -36,9 +40,11 @@ import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.WorkoutTemp
         UserAuthEntity::class,
         CompletedWorkoutEntity::class,
         WorkoutTemplateEntity::class,
-        WorkoutCategoryEntity::class
+        WorkoutCategoryEntity::class,
+        AchievementDefinitionEntity::class,  // DODANE: Nowa encja dla definicji osiągnięć
+        AchievementProgressEntity::class     // DODANE: Nowa encja dla postępu w osiągnięciach
     ],
-    version = 4,
+    version = 5,  // ZWIĘKSZONA WERSJA: z 4 do 5 (dodane nowe tabele)
     exportSchema = false
 )
 @TypeConverters(TimestampConverter::class, MapConverter::class)
@@ -52,6 +58,8 @@ abstract class UserDatabase : RoomDatabase() {
     abstract fun workoutDao(): WorkoutDao
     abstract fun workoutTemplateDao(): WorkoutTemplateDao
     abstract fun workoutCategoryDao(): WorkoutCategoryDao
+    abstract fun achievementDefinitionDao(): AchievementDefinitionDao
+    abstract fun achievementProgressDao(): AchievementProgressDao
 
     companion object {
         private const val DATABASE_NAME = "user_database"

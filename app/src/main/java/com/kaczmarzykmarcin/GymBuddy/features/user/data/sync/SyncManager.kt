@@ -28,6 +28,8 @@ class SyncManager @Inject constructor(
     private val userProfileDao: UserProfileDao,
     private val userStatsDao: UserStatsDao,
     private val userAchievementDao: UserAchievementDao,
+    private val achievementDefinitionDao: AchievementDefinitionDao,
+    private val achievementProgressDao: AchievementProgressDao,
     private val workoutTemplateDao: WorkoutTemplateDao,
     private val workoutDao: WorkoutDao,
     private val workoutCategoryDao: WorkoutCategoryDao,
@@ -118,9 +120,6 @@ class SyncManager @Inject constructor(
             // Synchronizacja statystyk użytkowników
             syncUserStats()
 
-            // USUNIĘTO: Synchronizacja starych osiągnięć użytkowników
-            // syncUserAchievements() - już nie potrzebne
-
             // Synchronizacja szablonów treningów
             syncWorkoutTemplates()
 
@@ -129,6 +128,9 @@ class SyncManager @Inject constructor(
 
             // Synchronizacja kategorii - dwukierunkowa
             syncWorkoutCategories()
+
+            // NOWA: Synchronizacja osiągnięć
+            syncAchievements()
 
             _lastSyncTime.value = System.currentTimeMillis()
             _syncState.value = SyncState.Success
@@ -216,12 +218,6 @@ class SyncManager @Inject constructor(
             }
         }
     }
-
-    /**
-     * USUNIĘTO: Synchronizacja starych osiągnięć użytkowników
-     * Nowy system osiągnięć jest synchronizowany przez AchievementRepository
-     */
-    // private suspend fun syncUserAchievements() { ... }
 
     /**
      * Synchronizuje szablony treningów
@@ -332,6 +328,153 @@ class SyncManager @Inject constructor(
     }
 
     /**
+     * NOWA: Synchronizuje osiągnięcia - definicje i postępy
+     */
+    private suspend fun syncAchievements() {
+        try {
+            Log.d(TAG, "Starting achievements synchronization")
+
+            // 1. Synchronizacja definicji osiągnięć (tylko pobieranie z serwera)
+            syncAchievementDefinitions()
+
+            // 2. Synchronizacja postępów osiągnięć (dwukierunkowa)
+            syncAchievementProgresses()
+
+            Log.d(TAG, "Achievements synchronization completed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during achievements sync", e)
+        }
+    }
+
+    /**
+     * Synchronizuje definicje osiągnięć z Firebase do lokalnej bazy
+     */
+    private suspend fun syncAchievementDefinitions() {
+        try {
+            Log.d(TAG, "Syncing achievement definitions from Firebase")
+
+            val remoteDefinitions = remoteDataSource.getAllAchievementDefinitions()
+
+            if (remoteDefinitions.isSuccess) {
+                val definitions = remoteDefinitions.getOrNull() ?: emptyList()
+
+                definitions.forEach { definition ->
+                    try {
+                        // Sprawdź czy definicja istnieje lokalnie
+                        val localDefinition = achievementDefinitionDao.getAchievementDefinitionById(definition.id)
+
+                        val entity = mappers.toEntity(definition)
+
+                        if (localDefinition == null) {
+                            // Dodaj nową definicję
+                            achievementDefinitionDao.insertAchievementDefinition(entity)
+                            Log.d(TAG, "Added new achievement definition: ${definition.title}")
+                        } else if (localDefinition.createdAt < definition.createdAt.seconds) {
+                            // Aktualizuj jeśli zdalna jest nowsza
+                            achievementDefinitionDao.updateAchievementDefinition(entity)
+                            Log.d(TAG, "Updated achievement definition: ${definition.title}")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing achievement definition: ${definition.id}", e)
+                    }
+                }
+
+                Log.d(TAG, "Successfully synced ${definitions.size} achievement definitions")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing achievement definitions", e)
+        }
+    }
+
+    /**
+     * Synchronizuje postępy osiągnięć - dwukierunkowa synchronizacja
+     */
+    private suspend fun syncAchievementProgresses() {
+        try {
+            Log.d(TAG, "Syncing achievement progresses")
+
+            val currentUserId = getCurrentUserId()
+            if (currentUserId == null) {
+                Log.w(TAG, "No current user ID found for achievement progress sync")
+                return
+            }
+
+            // 1. Wyślij lokalne postępy do serwera (jeśli zostały zmodyfikowane)
+            val localProgresses = achievementProgressDao.getUserProgresses(currentUserId)
+
+            for (progressEntity in localProgresses) {
+                try {
+                    val progressModel = mappers.toModel(progressEntity)
+
+                    // Sprawdź czy postęp istnieje na serwerze
+                    val remoteProgress = remoteDataSource.getAchievementProgress(currentUserId, progressModel.achievementId)
+
+                    val shouldSync = if (remoteProgress.isSuccess) {
+                        val remote = remoteProgress.getOrNull()
+                        // Synchronizuj jeśli lokalny jest nowszy lub ma większą wartość
+                        remote == null ||
+                                progressModel.lastUpdated.seconds > remote.lastUpdated.seconds ||
+                                (progressModel.currentValue > remote.currentValue && !remote.isCompleted)
+                    } else {
+                        true // Nie ma na serwerze, wyślij
+                    }
+
+                    if (shouldSync) {
+                        val result = remoteDataSource.saveAchievementProgress(progressModel)
+                        if (result.isSuccess) {
+                            Log.d(TAG, "Successfully synced progress to server: ${progressModel.achievementId}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error syncing progress to server: ${progressEntity.achievementId}", e)
+                }
+            }
+
+            // 2. Pobierz postępy z serwera
+            val remoteProgresses = remoteDataSource.getUserAchievementProgresses(currentUserId)
+
+            if (remoteProgresses.isSuccess) {
+                val progresses = remoteProgresses.getOrNull() ?: emptyList()
+
+                progresses.forEach { remoteProgress ->
+                    try {
+                        // Sprawdź czy postęp istnieje lokalnie
+                        val localProgress = achievementProgressDao.getUserProgressForAchievement(
+                            currentUserId, remoteProgress.achievementId
+                        )
+
+                        val entity = mappers.toEntity(remoteProgress)
+
+                        if (localProgress == null) {
+                            // Dodaj nowy postęp z serwera
+                            achievementProgressDao.insertAchievementProgress(entity)
+                            Log.d(TAG, "Added new progress from server: ${remoteProgress.achievementId}")
+                        } else {
+                            // Porównaj który jest nowszy/lepszy
+                            val localModel = mappers.toModel(localProgress)
+
+                            val shouldUpdate = remoteProgress.lastUpdated.seconds > localModel.lastUpdated.seconds ||
+                                    (remoteProgress.isCompleted && !localModel.isCompleted) ||
+                                    (remoteProgress.currentValue > localModel.currentValue && !localModel.isCompleted)
+
+                            if (shouldUpdate) {
+                                achievementProgressDao.updateAchievementProgress(entity)
+                                Log.d(TAG, "Updated progress from server: ${remoteProgress.achievementId}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing remote progress: ${remoteProgress.achievementId}", e)
+                    }
+                }
+
+                Log.d(TAG, "Successfully processed ${progresses.size} achievement progresses from server")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing achievement progresses", e)
+        }
+    }
+
+    /**
      * Pobiera ID aktualnie zalogowanego użytkownika
      */
     private suspend fun getCurrentUserId(): String? {
@@ -375,9 +518,7 @@ class SyncManager @Inject constructor(
                 userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
                 userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
 
-                // USUNIĘTO: Zapisywanie starych osiągnięć
-                // Nowy system osiągnięć jest zarządzany przez AchievementRepository
-                Log.d(TAG, "Saved user data to local database (achievements handled by AchievementRepository)")
+                Log.d(TAG, "Saved user data to local database")
             }
 
             // Pobierz i zapisz szablony treningów
@@ -409,6 +550,15 @@ class SyncManager @Inject constructor(
                     } else {
                         workoutCategoryDao.updateWorkoutCategory(entity)
                     }
+                }
+            }
+
+            // NOWE: Pobierz i zapisz osiągnięcia
+            syncAchievementDefinitions()
+            val achievementProgressesResult = remoteDataSource.getUserAchievementProgresses(userId)
+            if (achievementProgressesResult.isSuccess) {
+                achievementProgressesResult.getOrNull()?.forEach { progress ->
+                    achievementProgressDao.insertAchievementProgress(mappers.toEntity(progress))
                 }
             }
 

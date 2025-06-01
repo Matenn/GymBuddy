@@ -4,11 +4,14 @@ import android.util.Log
 import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
 import com.kaczmarzykmarcin.GymBuddy.data.model.*
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.UserAchievementDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.AchievementDefinitionDao
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.AchievementProgressDao
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,10 +19,13 @@ import javax.inject.Singleton
 /**
  * Repozytorium do zarządzania osiągnięciami użytkowników.
  * Obsługuje nowy system osiągnięć z AchievementDefinition i AchievementProgress.
+ * Implementuje pattern local-first z synchronizacją Firebase.
  */
 @Singleton
 class AchievementRepository @Inject constructor(
-    private val userAchievementDao: UserAchievementDao,
+    private val achievementDefinitionDao: AchievementDefinitionDao,
+    private val achievementProgressDao: AchievementProgressDao,
+    private val userAchievementDao: UserAchievementDao, // Zachowane dla kompatybilności
     private val remoteDataSource: RemoteUserDataSource,
     private val syncManager: SyncManager,
     private val networkManager: NetworkConnectivityManager,
@@ -40,12 +46,19 @@ class AchievementRepository @Inject constructor(
                 definition
             }
 
-            // Zapisz w Firebase (jeśli jest połączenie)
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.saveAchievementDefinition(definitionWithId)
-            }
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(definitionWithId)
+            achievementDefinitionDao.insertAchievementDefinition(entity)
 
-            // TODO: Dodaj do lokalnej bazy danych jeśli potrzebne (opcjonalne)
+            // Synchronizuj z Firebase w tle
+            if (networkManager.isInternetAvailable()) {
+                try {
+                    remoteDataSource.saveAchievementDefinition(definitionWithId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync definition to Firebase immediately", e)
+                    // Synchronizacja zostanie ponowiona przez SyncManager
+                }
+            }
 
             Result.success(definitionWithId)
         } catch (e: Exception) {
@@ -55,16 +68,38 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera wszystkie definicje osiągnięć
+     * Pobiera wszystkie definicje osiągnięć z lokalnej bazy
      */
     suspend fun getAllAchievementDefinitions(): Result<List<AchievementDefinition>> {
         return try {
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.getAllAchievementDefinitions()
-            } else {
-                // Fallback - zwróć podstawowe osiągnięcia
-                Result.success(getDefaultAchievementDefinitions())
+            // Pobierz z lokalnej bazy
+            val localDefinitions = achievementDefinitionDao.getAllActiveDefinitions()
+                .map { mappers.toModel(it) }
+
+            // Jeśli puste i jest internet, pobierz z Firebase
+            if (localDefinitions.isEmpty() && networkManager.isInternetAvailable()) {
+                Log.d(TAG, "No local definitions found, syncing from Firebase")
+                syncDefinitionsFromFirebase()
+
+                // Pobierz ponownie z lokalnej bazy
+                val updatedDefinitions = achievementDefinitionDao.getAllActiveDefinitions()
+                    .map { mappers.toModel(it) }
+                return Result.success(updatedDefinitions)
             }
+
+            // Jeśli lokalnie mamy dane, ale nie ma internetu, zwróć lokalne
+            if (localDefinitions.isNotEmpty()) {
+                return Result.success(localDefinitions)
+            }
+
+            // Fallback - zwróć podstawowe osiągnięcia
+            val defaultDefinitions = getDefaultAchievementDefinitions()
+            // Zapisz domyślne definicje lokalnie
+            defaultDefinitions.forEach { definition ->
+                achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+            }
+
+            Result.success(defaultDefinitions)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get achievement definitions", e)
             Result.failure(e)
@@ -72,17 +107,36 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera definicję osiągnięcia po ID
+     * Pobiera definicję osiągnięcia po ID z lokalnej bazy
      */
     suspend fun getAchievementDefinition(achievementId: String): Result<AchievementDefinition?> {
         return try {
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.getAchievementDefinition(achievementId)
-            } else {
-                val defaultDefinitions = getDefaultAchievementDefinitions()
-                val definition = defaultDefinitions.find { it.id == achievementId }
-                Result.success(definition)
+            // Próba pobrania z lokalnej bazy
+            val localDefinition = achievementDefinitionDao.getAchievementDefinitionById(achievementId)
+
+            if (localDefinition != null) {
+                return Result.success(mappers.toModel(localDefinition))
             }
+
+            // Jeśli nie ma lokalnie i jest internet, pobierz z Firebase
+            if (networkManager.isInternetAvailable()) {
+                Log.d(TAG, "Definition not found locally, trying Firebase")
+                val remoteResult = remoteDataSource.getAchievementDefinition(achievementId)
+
+                if (remoteResult.isSuccess) {
+                    val definition = remoteResult.getOrNull()
+                    if (definition != null) {
+                        // Zapisz lokalnie
+                        achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+                        return Result.success(definition)
+                    }
+                }
+            }
+
+            // Fallback - sprawdź w domyślnych definicjach
+            val defaultDefinitions = getDefaultAchievementDefinitions()
+            val definition = defaultDefinitions.find { it.id == achievementId }
+            Result.success(definition)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get achievement definition", e)
             Result.failure(e)
@@ -102,12 +156,19 @@ class AchievementRepository @Inject constructor(
                 progress
             }
 
-            // Zapisz w Firebase (jeśli jest połączenie)
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.saveAchievementProgress(progressWithId)
-            }
+            // Zapisz lokalnie
+            val entity = mappers.toEntity(progressWithId)
+            achievementProgressDao.insertAchievementProgress(entity)
 
-            // TODO: Dodaj do lokalnej bazy danych jeśli potrzebne (opcjonalne)
+            // Synchronizuj z Firebase w tle
+            if (networkManager.isInternetAvailable()) {
+                try {
+                    remoteDataSource.saveAchievementProgress(progressWithId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync progress to Firebase immediately", e)
+                    // Synchronizacja zostanie ponowiona przez SyncManager
+                }
+            }
 
             Result.success(progressWithId)
         } catch (e: Exception) {
@@ -117,15 +178,33 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera postęp użytkownika w konkretnym osiągnięciu
+     * Pobiera postęp użytkownika w konkretnym osiągnięciu z lokalnej bazy
      */
     suspend fun getAchievementProgress(userId: String, achievementId: String): Result<AchievementProgress?> {
         return try {
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.getAchievementProgress(userId, achievementId)
-            } else {
-                Result.success(null)
+            // Pobierz z lokalnej bazy
+            val localProgress = achievementProgressDao.getUserProgressForAchievement(userId, achievementId)
+
+            if (localProgress != null) {
+                return Result.success(mappers.toModel(localProgress))
             }
+
+            // Jeśli nie ma lokalnie i jest internet, pobierz z Firebase
+            if (networkManager.isInternetAvailable()) {
+                Log.d(TAG, "Progress not found locally, trying Firebase")
+                val remoteResult = remoteDataSource.getAchievementProgress(userId, achievementId)
+
+                if (remoteResult.isSuccess) {
+                    val progress = remoteResult.getOrNull()
+                    if (progress != null) {
+                        // Zapisz lokalnie
+                        achievementProgressDao.insertAchievementProgress(mappers.toEntity(progress))
+                        return Result.success(progress)
+                    }
+                }
+            }
+
+            Result.success(null)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get achievement progress", e)
             Result.failure(e)
@@ -133,15 +212,26 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera wszystkie postępy użytkownika w osiągnięciach
+     * Pobiera wszystkie postępy użytkownika w osiągnięciach z lokalnej bazy
      */
     suspend fun getUserAchievementProgresses(userId: String): Result<List<AchievementProgress>> {
         return try {
-            if (networkManager.isInternetAvailable()) {
-                remoteDataSource.getUserAchievementProgresses(userId)
-            } else {
-                Result.success(emptyList())
+            // Pobierz z lokalnej bazy
+            val localProgresses = achievementProgressDao.getUserProgresses(userId)
+                .map { mappers.toModel(it) }
+
+            // Jeśli puste i jest internet, zsynchronizuj z Firebase
+            if (localProgresses.isEmpty() && networkManager.isInternetAvailable()) {
+                Log.d(TAG, "No local progresses found, syncing from Firebase")
+                syncProgressesFromFirebase(userId)
+
+                // Pobierz ponownie z lokalnej bazy
+                val updatedProgresses = achievementProgressDao.getUserProgresses(userId)
+                    .map { mappers.toModel(it) }
+                return Result.success(updatedProgresses)
             }
+
+            Result.success(localProgresses)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get user achievement progresses", e)
             Result.failure(e)
@@ -151,7 +241,7 @@ class AchievementRepository @Inject constructor(
     // ===== POŁĄCZONE DANE OSIĄGNIĘĆ =====
 
     /**
-     * Pobiera wszystkie osiągnięcia użytkownika (definicje + postęp)
+     * Pobiera wszystkie osiągnięcia użytkownika (definicje + postęp) z lokalnej bazy
      */
     suspend fun getUserAchievements(userId: String): Result<List<AchievementWithProgress>> {
         return try {
@@ -171,23 +261,21 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera ostatnio zdobyte osiągnięcia użytkownika
+     * Pobiera ostatnio zdobyte osiągnięcia użytkownika z lokalnej bazy
      */
     suspend fun getRecentlyCompletedAchievements(userId: String, limit: Int = 10): Result<List<AchievementWithProgress>> {
         return try {
-            val definitions = getAllAchievementDefinitions().getOrNull() ?: emptyList()
-            val progresses = getUserAchievementProgresses(userId).getOrNull() ?: emptyList()
+            val recentProgresses = achievementProgressDao.getRecentCompletedProgresses(userId, limit)
+                .map { mappers.toModel(it) }
 
-            val recentlyCompleted = progresses
-                .filter { it.isCompleted && it.completedAt != null }
-                .sortedByDescending { it.completedAt?.seconds ?: 0 }
-                .take(limit)
-                .mapNotNull { progress ->
-                    val definition = definitions.find { it.id == progress.achievementId }
-                    if (definition != null) {
-                        AchievementWithProgress(definition, progress)
-                    } else null
-                }
+            val definitions = getAllAchievementDefinitions().getOrNull() ?: emptyList()
+
+            val recentlyCompleted = recentProgresses.mapNotNull { progress ->
+                val definition = definitions.find { it.id == progress.achievementId }
+                if (definition != null) {
+                    AchievementWithProgress(definition, progress)
+                } else null
+            }
 
             Result.success(recentlyCompleted)
         } catch (e: Exception) {
@@ -197,7 +285,7 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Pobiera osiągnięcia w trakcie realizacji
+     * Pobiera osiągnięcia w trakcie realizacji z lokalnej bazy
      */
     suspend fun getInProgressAchievements(userId: String): Result<List<AchievementWithProgress>> {
         return try {
@@ -228,7 +316,7 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Obserwuje zmiany w osiągnięciach użytkownika jako Flow
+     * Obserwuje zmiany w osiągnięciach użytkownika jako Flow z lokalnej bazy
      */
     fun observeUserAchievements(userId: String): Flow<List<AchievementWithProgress>> = flow {
         try {
@@ -236,8 +324,18 @@ class AchievementRepository @Inject constructor(
             val achievements = getUserAchievements(userId).getOrNull() ?: emptyList()
             emit(achievements)
 
-            // TODO: Implement real-time updates if needed
-            // For now, this is a simple implementation that emits once
+            // Obserwuj zmiany w postępach
+            achievementProgressDao.observeUserProgresses(userId).collect { progressEntities ->
+                val progresses = progressEntities.map { mappers.toModel(it) }
+                val definitions = getAllAchievementDefinitions().getOrNull() ?: emptyList()
+
+                val updatedAchievements = definitions.map { definition ->
+                    val progress = progresses.find { it.achievementId == definition.id }
+                    AchievementWithProgress(definition, progress)
+                }
+
+                emit(updatedAchievements)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error observing user achievements", e)
             emit(emptyList())
@@ -258,17 +356,104 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
-     * Usuwa postęp w osiągnięciu (przydatne do testów lub resetowania)
+     * Usuwa postęp w osiągnięciu z lokalnej bazy i Firebase
      */
     suspend fun resetAchievementProgress(userId: String, achievementId: String): Result<Unit> {
         return try {
+            // Usuń z lokalnej bazy
+            achievementProgressDao.deleteUserProgressForAchievement(userId, achievementId)
+
+            // Usuń z Firebase jeśli jest połączenie
             if (networkManager.isInternetAvailable()) {
                 remoteDataSource.deleteAchievementProgress(userId, achievementId)
-            } else {
-                Result.failure(Exception("No network connection"))
             }
+
+            Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to reset achievement progress", e)
+            Result.failure(e)
+        }
+    }
+
+    // ===== SYNCHRONIZACJA =====
+
+    /**
+     * Synchronizuje definicje osiągnięć z Firebase do lokalnej bazy
+     */
+    private suspend fun syncDefinitionsFromFirebase(): Result<Unit> {
+        return try {
+            if (!networkManager.isInternetAvailable()) {
+                return Result.failure(Exception("No network connection"))
+            }
+
+            val remoteResult = remoteDataSource.getAllAchievementDefinitions()
+
+            if (remoteResult.isSuccess) {
+                val definitions = remoteResult.getOrNull() ?: emptyList()
+
+                // Zapisz wszystkie definicje lokalnie
+                definitions.forEach { definition ->
+                    achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+                }
+
+                Log.d(TAG, "Synced ${definitions.size} achievement definitions from Firebase")
+                Result.success(Unit)
+            } else {
+                remoteResult.exceptionOrNull()?.let { Result.failure(it) } ?: Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync definitions from Firebase", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Synchronizuje postępy osiągnięć z Firebase do lokalnej bazy
+     */
+    private suspend fun syncProgressesFromFirebase(userId: String): Result<Unit> {
+        return try {
+            if (!networkManager.isInternetAvailable()) {
+                return Result.failure(Exception("No network connection"))
+            }
+
+            val remoteResult = remoteDataSource.getUserAchievementProgresses(userId)
+
+            if (remoteResult.isSuccess) {
+                val progresses = remoteResult.getOrNull() ?: emptyList()
+
+                // Zapisz wszystkie postępy lokalnie
+                progresses.forEach { progress ->
+                    achievementProgressDao.insertAchievementProgress(mappers.toEntity(progress))
+                }
+
+                Log.d(TAG, "Synced ${progresses.size} achievement progresses from Firebase")
+                Result.success(Unit)
+            } else {
+                remoteResult.exceptionOrNull()?.let { Result.failure(it) } ?: Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync progresses from Firebase", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Wymusza pełną synchronizację osiągnięć użytkownika
+     */
+    suspend fun syncUserAchievements(userId: String): Result<Unit> {
+        return try {
+            Log.d(TAG, "Starting full achievement sync for user: $userId")
+
+            // Synchronizuj definicje
+            syncDefinitionsFromFirebase()
+
+            // Synchronizuj postępy
+            syncProgressesFromFirebase(userId)
+
+            Log.d(TAG, "Full achievement sync completed successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync user achievements", e)
             Result.failure(e)
         }
     }
