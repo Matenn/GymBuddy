@@ -33,6 +33,9 @@ interface UserDao {
 
     @Query("DELETE FROM users WHERE id = :userId")
     suspend fun deleteUser(userId: String)
+
+    @Query("DELETE FROM users")
+    suspend fun clearAllUsers()
 }
 
 @Dao
@@ -48,6 +51,9 @@ interface UserAuthDao {
 
     @Query("SELECT * FROM user_auth WHERE needsSync = 1")
     suspend fun getUserAuthToSync(): List<UserAuthEntity>
+
+    @Query("DELETE FROM user_auth")
+    suspend fun clearAllUserAuth()
 }
 
 @Dao
@@ -66,6 +72,9 @@ interface UserProfileDao {
 
     @Query("SELECT * FROM user_profiles WHERE needsSync = 1")
     suspend fun getUserProfilesToSync(): List<UserProfileEntity>
+
+    @Query("DELETE FROM user_profiles")
+    suspend fun clearAllUserProfiles()
 }
 
 @Dao
@@ -84,6 +93,9 @@ interface UserStatsDao {
 
     @Query("SELECT * FROM user_stats WHERE needsSync = 1")
     suspend fun getUserStatsToSync(): List<UserStatsEntity>
+
+    @Query("DELETE FROM user_stats")
+    suspend fun clearAllUserStats()
 }
 
 // ZAKTUALIZOWANE DAO - zachowuje stary format dla kompatybilności
@@ -110,6 +122,9 @@ interface UserAchievementDao {
 
     @Query("SELECT * FROM user_achievements WHERE needsSync = 1")
     suspend fun getUserAchievementsToSync(): List<UserAchievementEntity>
+
+    @Query("DELETE FROM user_achievements")
+    suspend fun clearAllUserAchievements()
 }
 
 @Dao
@@ -137,6 +152,9 @@ interface WorkoutTemplateDao {
 
     @Query("SELECT * FROM workout_templates WHERE userId = :userId AND categoryId = :categoryId ORDER BY updatedAt DESC")
     fun getWorkoutTemplatesByCategory(userId: String, categoryId: String): Flow<List<WorkoutTemplateEntity>>
+
+    @Query("DELETE FROM workout_templates")
+    suspend fun clearAllWorkoutTemplates()
 }
 
 @Dao
@@ -167,6 +185,9 @@ interface WorkoutDao {
 
     @Query("SELECT * FROM completed_workouts WHERE userId = :userId AND categoryId = :categoryId AND endTime IS NOT NULL ORDER BY endTime DESC")
     fun getCompletedWorkoutsByCategory(userId: String, categoryId: String): Flow<List<CompletedWorkoutEntity>>
+
+    @Query("DELETE FROM completed_workouts")
+    suspend fun clearAllCompletedWorkouts()
 }
 
 @Dao
@@ -191,6 +212,13 @@ interface WorkoutCategoryDao {
 
     @Query("DELETE FROM workout_categories WHERE id = :categoryId AND isDefault = 0")
     suspend fun deleteWorkoutCategory(categoryId: String)
+
+    @Query("DELETE FROM workout_categories WHERE isDefault = 0")
+    suspend fun clearAllUserWorkoutCategories()
+
+    // Alternatywnie, jeśli chcesz wyczyścić wszystkie kategorie (włącznie z domyślnymi):
+    @Query("DELETE FROM workout_categories")
+    suspend fun clearAllWorkoutCategories()
 }
 
 // NOWE DAO dla systemu osiągnięć
@@ -229,6 +257,9 @@ interface AchievementDefinitionDao {
 
     @Query("UPDATE achievement_definitions SET isActive = 0 WHERE id = :definitionId")
     suspend fun deactivateAchievementDefinition(definitionId: String)
+
+    // UWAGA: Nie dodajemy clearAllAchievementDefinitions() bo definicje są globalne
+    // i powinny pozostać w bazie po wylogowaniu użytkownika
 }
 
 @Dao
@@ -284,4 +315,10 @@ interface AchievementProgressDao {
 
     @Query("SELECT SUM(currentValue) FROM achievement_progresses WHERE userId = :userId AND achievementId IN (SELECT id FROM achievement_definitions WHERE xpReward > 0)")
     suspend fun getUserTotalXPFromAchievements(userId: String): Int?
+
+    @Query("DELETE FROM achievement_progresses")
+    suspend fun clearAllAchievementProgresses()
+
+    @Query("DELETE FROM achievement_progresses WHERE userId = :userId")
+    suspend fun clearUserAchievementProgresses(userId: String)
 }

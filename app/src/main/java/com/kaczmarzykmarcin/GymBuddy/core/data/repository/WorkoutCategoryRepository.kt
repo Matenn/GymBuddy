@@ -49,6 +49,25 @@ class WorkoutCategoryRepository @Inject constructor(
     }
 
     /**
+     * Czyści wszystkie lokalne kategorie treningowe użytkownika z bazy danych.
+     * Zachowuje kategorie domyślne.
+     */
+    suspend fun clearLocalData(): Result<Unit> {
+        return try {
+            Log.d(TAG, "Clearing all local user workout categories")
+
+            // Wyczyść tylko kategorie użytkownika (zachowaj domyślne)
+            workoutCategoryDao.clearAllUserWorkoutCategories()
+
+            Log.d(TAG, "Successfully cleared all local user workout categories")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing local workout categories", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Pobiera wszystkie kategorie treningowe użytkownika jako Flow z lokalnej bazy danych.
      */
     fun getUserWorkoutCategories(userId: String): Flow<List<WorkoutCategory>> {

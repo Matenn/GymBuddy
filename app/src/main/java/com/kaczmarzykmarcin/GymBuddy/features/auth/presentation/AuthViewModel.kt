@@ -130,31 +130,8 @@ class AuthViewModel @Inject constructor(
             if (currentUser != null) {
                 Log.d(TAG, "Current user found: ${currentUser.uid}")
 
-                // Inicjalizuj domyślne osiągnięcia przy każdym logowaniu
-                initializeAchievements()
-
-                // Aktualizacja czasu ostatniego logowania
-                try {
-                    val result = userRepository.updateLastLogin(currentUser.uid)
-                    if (result.isSuccess) {
-                        Log.d(TAG, "Last login updated successfully")
-
-                        // Dodaj wywołanie synchronizacji treningów
-                        try {
-                            val userId = currentUser.uid
-                            userRepository.getFullUserData(userId) // To wywołanie powinno już synchronizować treningi
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error synchronizing workouts", e)
-                        }
-                    } else {
-                        Log.w(TAG, "Failed to update last login: ${result.exceptionOrNull()?.message}")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Exception updating last login", e)
-                }
-                // Zapisz stan uwierzytelnienia
-                saveAuthState(true)
-                _authState.value = AuthState.Authenticated(currentUser)
+                // Przygotuj aplikację dla tego użytkownika
+                onSignInSuccess(currentUser)
             } else {
                 Log.d(TAG, "No current user found, setting state to NotAuthenticated")
                 // Zapisz stan uwierzytelnienia
@@ -181,6 +158,64 @@ class AuthViewModel @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception initializing achievements", e)
+        }
+    }
+
+    /**
+     * Obsługuje udane logowanie i przygotowuje aplikację dla użytkownika
+     */
+    private suspend fun onSignInSuccess(firebaseUser: FirebaseUser) {
+        try {
+            Log.d(TAG, "Processing successful sign in for user: ${firebaseUser.uid}")
+
+            // 1. Przygotuj aplikację dla nowego użytkownika (wyczyść stare dane)
+            val prepareResult = userRepository.prepareForNewUser(firebaseUser.uid)
+            if (prepareResult.isFailure) {
+                Log.w(TAG, "Failed to prepare for new user, but continuing...")
+            }
+
+            // 2. Inicjalizuj domyślne osiągnięcia przy każdym logowaniu
+            initializeAchievements()
+
+            // 3. Utwórz/pobierz dane użytkownika
+            val userResult = userRepository.createOrGetUser(firebaseUser)
+            if (userResult.isSuccess) {
+                Log.d(TAG, "User data created/retrieved successfully")
+            } else {
+                Log.e(TAG, "Failed to create/get user data")
+            }
+
+            // 4. Aktualizacja czasu ostatniego logowania
+            try {
+                val result = userRepository.updateLastLogin(firebaseUser.uid)
+                if (result.isSuccess) {
+                    Log.d(TAG, "Last login updated successfully")
+
+                    // Dodaj wywołanie synchronizacji treningów
+                    try {
+                        userRepository.getFullUserData(firebaseUser.uid) // To wywołanie powinno już synchronizować treningi
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error synchronizing workouts", e)
+                    }
+                } else {
+                    Log.w(TAG, "Failed to update last login")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception updating last login", e)
+            }
+
+            // 5. Zaktualizuj stan uwierzytelniania
+            saveAuthState(true)
+            _authState.value = AuthState.Authenticated(firebaseUser)
+
+            Log.d(TAG, "Sign in process completed successfully")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during sign in process", e)
+            // W przypadku błędu, nadal ustaw stan jako zalogowany
+            // Synchronizacja danych może nastąpić później
+            saveAuthState(true)
+            _authState.value = AuthState.Authenticated(firebaseUser)
         }
     }
 
@@ -252,25 +287,9 @@ class AuthViewModel @Inject constructor(
                 Log.d(TAG, "Attempting to sign in with email: $email")
                 val result = auth.signInWithEmailAndPassword(email, password).await()
 
-                result.user?.let {
-                    Log.d(TAG, "Email sign in successful for user: ${it.uid}")
-
-                    // Inicjalizuj osiągnięcia po udanym logowaniu
-                    initializeAchievements()
-
-                    try {
-                        val updateResult = userRepository.updateLastLogin(it.uid)
-                        if (updateResult.isSuccess) {
-                            Log.d(TAG, "Last login updated successfully")
-                        } else {
-                            Log.w(TAG, "Failed to update last login: ${updateResult.exceptionOrNull()?.message}")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Exception updating last login", e)
-                    }
-                    // Zapisz stan uwierzytelnienia
-                    saveAuthState(true)
-                    _authState.value = AuthState.Authenticated(it)
+                result.user?.let { user ->
+                    Log.d(TAG, "Email sign in successful for user: ${user.uid}")
+                    onSignInSuccess(user)
                 } ?: run {
                     Log.e(TAG, "Sign in succeeded but user is null")
                     saveAuthState(false)
@@ -401,46 +420,8 @@ class AuthViewModel @Inject constructor(
                 val isNewUser = result.additionalUserInfo?.isNewUser == true
                 Log.d(TAG, "Is new user: $isNewUser")
 
-                // Inicjalizuj osiągnięcia dla każdego użytkownika (nowego i istniejącego)
-                initializeAchievements()
-
-                if (isNewUser) {
-                    Log.d(TAG, "Creating new user profile in Firestore for ${user.uid}")
-                    try {
-                        val createUserResult = userRepository.createUser(user)
-                        if (createUserResult.isFailure) {
-                            Log.e(TAG, "Failed to create user profile", createUserResult.exceptionOrNull())
-                            saveAuthState(false)
-                            _authState.value = AuthState.Error("Failed to create user profile: ${createUserResult.exceptionOrNull()?.message}")
-                            return
-                        } else {
-                            Log.d(TAG, "User profile created successfully")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Exception creating user profile", e)
-                        saveAuthState(false)
-                        _authState.value = AuthState.Error("Failed to create user profile: ${e.message}")
-                        return
-                    }
-                } else {
-                    Log.d(TAG, "Updating last login for existing user ${user.uid}")
-                    try {
-                        val updateResult = userRepository.updateLastLogin(user.uid)
-                        if (updateResult.isFailure) {
-                            Log.e(TAG, "Failed to update last login", updateResult.exceptionOrNull())
-                            // Continue anyway as this isn't critical
-                        } else {
-                            Log.d(TAG, "Last login updated successfully")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Exception updating last login", e)
-                        // Continue anyway as this isn't critical
-                    }
-                }
-
-                Log.d(TAG, "Authentication complete - setting state to Authenticated")
-                saveAuthState(true)
-                _authState.value = AuthState.Authenticated(user)
+                // Obsłuż logowanie niezależnie od tego czy to nowy czy istniejący użytkownik
+                onSignInSuccess(user)
             } else {
                 Log.e(TAG, "Firebase auth succeeded but user is null")
                 saveAuthState(false)
@@ -511,45 +492,8 @@ class AuthViewModel @Inject constructor(
                     val isNewUser = result.additionalUserInfo?.isNewUser == true
                     Log.d(TAG, "Is new user: $isNewUser")
 
-                    // Inicjalizuj osiągnięcia dla każdego użytkownika
-                    initializeAchievements()
-
-                    if (isNewUser) {
-                        Log.d(TAG, "Creating new user profile in Firestore")
-                        try {
-                            val createUserResult = userRepository.createUser(user)
-                            if (createUserResult.isFailure) {
-                                Log.e(TAG, "Failed to create user profile", createUserResult.exceptionOrNull())
-                                saveAuthState(false)
-                                _authState.value = AuthState.Error("Failed to create user profile: ${createUserResult.exceptionOrNull()?.message}")
-                                return@launch
-                            } else {
-                                Log.d(TAG, "User profile created successfully")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Exception creating user profile", e)
-                            saveAuthState(false)
-                            _authState.value = AuthState.Error("Failed to create user profile: ${e.message}")
-                            return@launch
-                        }
-                    } else {
-                        Log.d(TAG, "Updating last login for existing user")
-                        try {
-                            val updateResult = userRepository.updateLastLogin(user.uid)
-                            if (updateResult.isFailure) {
-                                Log.e(TAG, "Failed to update last login", updateResult.exceptionOrNull())
-                                // Continue anyway as this isn't critical
-                            } else {
-                                Log.d(TAG, "Last login updated successfully")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Exception updating last login", e)
-                            // Continue anyway as this isn't critical
-                        }
-                    }
-
-                    saveAuthState(true)
-                    _authState.value = AuthState.Authenticated(user)
+                    // Obsłuż logowanie niezależnie od tego czy to nowy czy istniejący użytkownik
+                    onSignInSuccess(user)
                 } else {
                     Log.e(TAG, "Authentication succeeded but user is null")
                     saveAuthState(false)
@@ -583,12 +527,8 @@ class AuthViewModel @Inject constructor(
                 val user = result.user
                 if (user != null) {
                     try {
-                        // Inicjalizuj osiągnięcia dla nowego użytkownika
-                        initializeAchievements()
-
-                        userRepository.createUser(user)
-                        saveAuthState(true)
-                        _authState.value = AuthState.Authenticated(user)
+                        Log.d(TAG, "User created successfully: ${user.uid}")
+                        onSignInSuccess(user)
                     } catch (e: Exception) {
                         // Jeśli nie udało się utworzyć profilu, usuń konto aby uniknąć zawieszonych kont
                         try {
@@ -622,21 +562,77 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Wylogowuje użytkownika i czyści lokalną bazę danych
+     */
     fun signOut() {
-        // Wyloguj z Google
-        if (::googleSignInClient.isInitialized) {
-            googleSignInClient.signOut()
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Starting sign out process")
+
+                // 1. Wyczyść lokalną bazę danych
+                val clearResult = userRepository.clearAllUserData()
+                if (clearResult.isSuccess) {
+                    Log.d(TAG, "Local database cleared successfully")
+                } else {
+                    Log.w(TAG, "Failed to clear local database")
+                }
+
+                // 2. Wyloguj z Google
+                if (::googleSignInClient.isInitialized) {
+                    googleSignInClient.signOut()
+                }
+
+                // 3. Wyloguj z Facebook
+                LoginManager.getInstance().logOut()
+
+                // 4. Wyloguj z Firebase
+                auth.signOut()
+                Log.d(TAG, "Signed out from Firebase")
+
+                // 5. Zaktualizuj stan uwierzytelniania
+                saveAuthState(false)
+                _authState.value = AuthState.NotAuthenticated
+
+                Log.d(TAG, "Sign out completed successfully")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during sign out", e)
+                // Nawet jeśli wystąpi błąd, spróbuj wylogować z Firebase
+                try {
+                    if (::googleSignInClient.isInitialized) {
+                        googleSignInClient.signOut()
+                    }
+                    LoginManager.getInstance().logOut()
+                    auth.signOut()
+                    saveAuthState(false)
+                    _authState.value = AuthState.NotAuthenticated
+                } catch (firebaseError: Exception) {
+                    Log.e(TAG, "Failed to sign out from Firebase", firebaseError)
+                }
+            }
         }
+    }
 
-        // Wyloguj z Facebook
-        LoginManager.getInstance().logOut()
+    /**
+     * Wymusza pełne odświeżenie danych użytkownika
+     */
+    fun refreshCurrentUser() {
+        viewModelScope.launch {
+            val currentUser = (_authState.value as? AuthState.Authenticated)?.user
+            if (currentUser != null) {
+                try {
+                    Log.d(TAG, "Refreshing current user data")
 
-        // Wyloguj z Firebase
-        auth.signOut()
+                    // Wymuś synchronizację danych z Firebase
+                    userRepository.getFullUserData(currentUser.uid)
 
-        // Zapisz stan wylogowania
-        saveAuthState(false)
-        _authState.value = AuthState.NotAuthenticated
+                    Log.d(TAG, "User data refreshed successfully")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error refreshing user data", e)
+                }
+            }
+        }
     }
 
     fun resetAuthStateToNotAuthenticated() {

@@ -395,4 +395,25 @@ class WorkoutRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Czyści wszystkie lokalne dane treningowe z bazy danych
+     */
+    suspend fun clearLocalData(): Result<Unit> {
+        return try {
+            Log.d(TAG, "Clearing all local workout data")
+
+            // Wyczyść szablony treningów
+            workoutTemplateDao.clearAllWorkoutTemplates()
+
+            // Wyczyść historię treningów
+            workoutDao.clearAllCompletedWorkouts()
+
+            Log.d(TAG, "Successfully cleared all local workout data")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing local workout data", e)
+            Result.failure(e)
+        }
+    }
 }

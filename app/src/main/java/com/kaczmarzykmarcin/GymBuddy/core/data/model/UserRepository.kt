@@ -79,13 +79,6 @@ class UserRepository @Inject constructor(
             // Inicjalizuj domyślne kategorie treningowe
             workoutCategoryRepository.initializeDefaultCategories(firebaseUser.uid)
 
-            // Dodaj pierwsze osiągnięcie - używamy nowego systemu osiągnięć
-            createOrUpdateAchievementProgress(
-                firebaseUser.uid,
-                "first_workout",
-                1,
-                true
-            )
 
             Result.success(newUser)
         } catch (e: Exception) {
@@ -875,5 +868,102 @@ class UserRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error checking exercise weight achievements", e)
         }
+    }
+
+    /**
+     * Czyści wszystkie dane użytkownika z lokalnej bazy danych po wylogowaniu.
+     * Ta metoda powinna być wywołana przed zalogowaniem nowego użytkownika,
+     * aby uniknąć problemów z danymi poprzedniego użytkownika.
+     */
+    suspend fun clearAllUserData(): Result<Unit> {
+        return try {
+            Log.d(TAG, "Starting to clear all user data from local database")
+
+            // 1. Zatrzymaj synchronizację
+            Log.d(TAG, "Clearing sync data")
+            syncManager.clearAllData()
+
+            // 2. Wyczyść dane podstawowe użytkownika
+            Log.d(TAG, "Clearing basic user data")
+            userDao.clearAllUsers()
+            userAuthDao.clearAllUserAuth()
+            userProfileDao.clearAllUserProfiles()
+            userStatsDao.clearAllUserStats()
+            userAchievementDao.clearAllUserAchievements()
+
+            // 3. Wyczyść dane treningowe
+            Log.d(TAG, "Clearing workout data")
+            val workoutClearResult = workoutRepository.clearLocalData()
+            if (workoutClearResult.isFailure) {
+                Log.w(TAG, "Failed to clear workout data")
+            }
+
+            // 4. Wyczyść kategorie treningowe (tylko użytkownika, zachowaj domyślne)
+            Log.d(TAG, "Clearing user workout categories")
+            val categoryClearResult = workoutCategoryRepository.clearLocalData()
+            if (categoryClearResult.isFailure) {
+                Log.w(TAG, "Failed to clear workout categories")
+            }
+
+            // 5. Wyczyść postępy osiągnięć (definicje pozostają)
+            Log.d(TAG, "Clearing achievement progress data")
+            val achievementClearResult = achievementRepository.clearLocalProgressData()
+            if (achievementClearResult.isFailure) {
+                Log.w(TAG, "Failed to clear achievement data")
+            }
+
+            Log.d(TAG, "Successfully cleared all user data from local database")
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing user data from local database", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Przygotowuje aplikację dla nowego użytkownika po zalogowaniu.
+     * Czyści stare dane i inicjalizuje podstawowe dane dla nowego użytkownika.
+     */
+    suspend fun prepareForNewUser(userId: String): Result<Unit> {
+        return try {
+            Log.d(TAG, "Preparing application for new user: $userId")
+
+            // 1. Wyczyść stare dane
+            val clearResult = clearAllUserData()
+            if (clearResult.isFailure) {
+                Log.w(TAG, "Failed to clear old data, but continuing...")
+            }
+
+            // 2. Zainicjalizuj podstawowe dane dla nowego użytkownika
+            // Przywróć domyślne kategorie treningowe (używając istniejącej metody z userId)
+            try {
+                workoutCategoryRepository.initializeDefaultCategories(userId)
+                Log.d(TAG, "Successfully initialized default categories")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize default categories", e)
+            }
+
+            // Opcjonalnie: zainicjalizuj podstawowe definicje osiągnięć jeśli nie istnieją
+            try {
+                achievementRepository.getAllAchievementDefinitions()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize achievement definitions: ${e.message}")
+            }
+
+            Log.d(TAG, "Application prepared for new user: $userId")
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing application for new user", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Alias dla createUser - zgodność z AuthViewModel
+     */
+    suspend fun createOrGetUser(firebaseUser: FirebaseUser): Result<User> {
+        return createUser(firebaseUser)
     }
 }

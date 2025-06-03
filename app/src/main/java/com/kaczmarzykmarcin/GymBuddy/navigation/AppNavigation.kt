@@ -26,6 +26,8 @@ import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.login.LoginScree
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.register.RegisterScreen
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.reset.PasswordResetScreen
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.welcome.WelcomeScreen
+import com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.BadgesDetailScreen
+import com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.BadgesScreen
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation.DashboardScreen
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryScreen
 import com.kaczmarzykmarcin.GymBuddy.features.profile.presentation.ProfileScreen
@@ -263,6 +265,42 @@ fun AppNavigation(navController: NavHostController) {
             ProfileScreen(
                 navController = navController,
                 authViewModel = authViewModel
+            )
+        }
+
+        composable(
+            route = NavigationRoutes.BADGES,
+            enterTransition = {
+                fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            Log.d(TAG, "Loading BadgesScreen")
+            BadgesScreen(navController = navController)
+        }
+
+        composable(
+            route = "${NavigationRoutes.BADGES_DETAIL}/{category}",
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeIn(animationSpec = tween(300))
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(animationSpec = tween(300))
+            }
+        ) { backStackEntry ->
+            val category = backStackEntry.arguments?.getString("category") ?: "all"
+            Log.d(TAG, "Loading BadgesDetailScreen for category: $category")
+            BadgesDetailScreen(
+                navController = navController,
+                category = category
             )
         }
     }

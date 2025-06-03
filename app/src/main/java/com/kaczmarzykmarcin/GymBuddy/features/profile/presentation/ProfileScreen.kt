@@ -66,6 +66,7 @@ import com.kaczmarzykmarcin.GymBuddy.data.model.UserData
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.profile.viewmodel.ProfileViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.viewmodel.StatisticsViewModel
+import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -171,7 +172,7 @@ fun ProfileScreen(
                 // Przycisk przeglądania odznak
                 Button(
                     onClick = {
-                        // TODO: Navigate to badges gallery
+                        navController.navigate(NavigationRoutes.BADGES)
                     },
                     modifier = Modifier
                         .fillMaxWidth()

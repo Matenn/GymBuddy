@@ -459,6 +459,30 @@ class AchievementRepository @Inject constructor(
     }
 
     /**
+     * Czyści wszystkie lokalne dane postępów osiągnięć z bazy danych.
+     * UWAGA: Definicje osiągnięć pozostają, bo są globalne.
+     */
+    suspend fun clearLocalProgressData(): Result<Unit> {
+        return try {
+            Log.d(TAG, "Clearing all local achievement progress data")
+
+            // Wyczyść postępy osiągnięć
+            achievementProgressDao.clearAllAchievementProgresses()
+
+            // Wyczyść stare osiągnięcia (dla kompatybilności)
+            userAchievementDao.clearAllUserAchievements()
+
+            // UWAGA: NIE czyścimy achievement_definitions, bo są globalne
+
+            Log.d(TAG, "Successfully cleared all local achievement progress data")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing local achievement progress data", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Zwraca domyślne definicje osiągnięć jako fallback
      */
     private fun getDefaultAchievementDefinitions(): List<AchievementDefinition> {

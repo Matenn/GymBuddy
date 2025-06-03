@@ -568,6 +568,54 @@ class SyncManager @Inject constructor(
         }
     }
 
+    /**
+     * Czyści wszystkie dane synchronizacji (przydatne po wylogowaniu)
+     * ZAKTUALIZOWANE: dodano więcej szczegółów i lepszą obsługę błędów
+     */
+    suspend fun clearAllData() {
+        try {
+            Log.d(TAG, "Clearing all sync data")
+
+            // 1. Zatrzymaj synchronizację
+            isSyncRunning = false
+            Log.d(TAG, "Stopped sync process")
+
+            // 2. Wyczyść wszystkie dane z lokalnych tabel
+            Log.d(TAG, "Clearing user data tables")
+            userDao.clearAllUsers()
+            userAuthDao.clearAllUserAuth()
+            userProfileDao.clearAllUserProfiles()
+            userStatsDao.clearAllUserStats()
+            userAchievementDao.clearAllUserAchievements()
+
+            Log.d(TAG, "Clearing workout data tables")
+            workoutTemplateDao.clearAllWorkoutTemplates()
+            workoutDao.clearAllCompletedWorkouts()
+            workoutCategoryDao.clearAllUserWorkoutCategories() // Zachowaj domyślne kategorie
+
+            Log.d(TAG, "Clearing achievement progress data")
+            achievementProgressDao.clearAllAchievementProgresses()
+            // UWAGA: definicje osiągnięć pozostawiamy, bo są globalne
+
+            // 3. Zresetuj stany synchronizacji
+            _syncState.value = SyncState.Idle
+            _lastSyncTime.value = 0
+
+            Log.d(TAG, "All sync data cleared successfully")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing sync data", e)
+            // Mimo błędu, spróbuj zresetować stany
+            try {
+                isSyncRunning = false
+                _syncState.value = SyncState.Idle
+                _lastSyncTime.value = 0
+            } catch (resetError: Exception) {
+                Log.e(TAG, "Error resetting sync states", resetError)
+            }
+        }
+    }
+
     companion object {
         private const val SYNC_INTERVAL = 15 * 60 * 1000L // 15 minut
     }

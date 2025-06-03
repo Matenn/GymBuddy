@@ -26,4 +26,7 @@ object NavigationRoutes {
     const val EDIT_WORKOUT_TEMPLATE = "edit_workout_template/{templateId}"
     const val CATEGORY_MANAGEMENT = "category_management"
 
+    const val BADGES = "badges"
+    const val BADGES_DETAIL = "badges_detail"
+
 }
