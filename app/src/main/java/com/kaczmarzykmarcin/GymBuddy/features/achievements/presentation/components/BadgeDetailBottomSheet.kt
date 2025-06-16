@@ -1,5 +1,5 @@
 // BadgeDetailBottomSheet.kt
-package com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.components
+package com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*

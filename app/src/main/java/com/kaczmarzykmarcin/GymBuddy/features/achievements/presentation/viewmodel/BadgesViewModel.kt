@@ -1,5 +1,5 @@
 // BadgesViewModel.kt
-package com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.viewmodel
+package com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.ViewModel

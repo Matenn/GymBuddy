@@ -1,5 +1,5 @@
 // BadgesDetailScreen.kt
-package com.kaczmarzykmarcin.GymBuddy.features.badges.presentation
+package com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,10 +25,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.google.firebase.auth.FirebaseAuth
-import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementType
 import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementWithProgress
-import com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.components.BadgeDetailBottomSheet
-import com.kaczmarzykmarcin.GymBuddy.features.badges.presentation.viewmodel.BadgesViewModel
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.components.BadgeDetailBottomSheet
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.viewmodel.BadgesViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
