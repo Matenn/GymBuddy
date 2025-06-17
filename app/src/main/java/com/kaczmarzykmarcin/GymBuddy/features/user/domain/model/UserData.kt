@@ -1,6 +1,7 @@
 package com.kaczmarzykmarcin.GymBuddy.features.user.domain.model
 
-import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.UserAchievement
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementWithProgress
+
 import com.kaczmarzykmarcin.GymBuddy.features.profile.domain.model.UserProfile
 import com.kaczmarzykmarcin.GymBuddy.features.auth.domain.model.UserAuth
 
@@ -13,5 +14,5 @@ data class UserData(
     val auth: UserAuth,
     val profile: UserProfile,
     val stats: UserStats,
-    val achievements: List<UserAchievement> = emptyList()
+    val achievements: List<AchievementWithProgress> = emptyList()
 )

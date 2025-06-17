@@ -31,6 +31,10 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE needsSync = 1")
     suspend fun getUsersToSync(): List<UserEntity>
 
+    @Query("SELECT * FROM users")  // DODANA METODA
+    suspend fun getAllUsers(): List<UserEntity>
+
+
     @Query("DELETE FROM users WHERE id = :userId")
     suspend fun deleteUser(userId: String)
 
@@ -125,6 +129,15 @@ interface UserAchievementDao {
 
     @Query("DELETE FROM user_achievements")
     suspend fun clearAllUserAchievements()
+
+    @Query("DELETE FROM achievement_definitions WHERE id = :definitionId")
+    suspend fun deleteAchievementDefinition(definitionId: String)
+
+    @Query("UPDATE achievement_definitions SET isActive = 0 WHERE id = :definitionId")
+    suspend fun deactivateAchievementDefinition(definitionId: String)
+
+    @Query("DELETE FROM achievement_definitions")
+    suspend fun clearAllDefinitions()
 }
 
 @Dao

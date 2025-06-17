@@ -248,9 +248,9 @@ class RemoteUserDataSource @Inject constructor(
             }
             val userStats = userStatsResult.getOrNull()!!
 
-            // 5. Get user achievements
-            val achievementsResult = getUserAchievements(userId)
-            val achievements = achievementsResult.getOrDefault(emptyList())
+            // 5. NOWY SYSTEM: Osiągnięcia będą pobierane osobno przez AchievementRepository
+            // Tutaj przekazujemy pustą listę, a pełne dane osiągnięć będą synchronizowane
+            // przez AchievementRepository w UserRepository.downloadFullUserData()
 
             // 6. Create and return the full UserData object
             val userData = UserData(
@@ -258,7 +258,7 @@ class RemoteUserDataSource @Inject constructor(
                 auth = userAuth,
                 profile = userProfile,
                 stats = userStats,
-                achievements = achievements
+                achievements = emptyList() // Osiągnięcia synchronizowane osobno
             )
 
             Result.success(userData)
@@ -290,6 +290,7 @@ class RemoteUserDataSource @Inject constructor(
     /**
      * Dodaje osiągnięcie użytkownika w Firebase
      */
+    @Deprecated("Use new achievement system with AchievementProgress instead")
     suspend fun addUserAchievement(userAchievement: UserAchievement): Result<UserAchievement> {
         return try {
             val docRef = userAchievementsCollection.document()
@@ -304,6 +305,7 @@ class RemoteUserDataSource @Inject constructor(
     /**
      * Sprawdza, czy użytkownik ma dane osiągnięcie
      */
+    @Deprecated("Use new achievement system with AchievementProgress instead")
     suspend fun hasAchievement(userId: String, achievementId: Int): Boolean {
         return try {
             val snapshot = userAchievementsCollection

@@ -24,83 +24,31 @@ class AchievementService @Inject constructor(
 ) {
     private val TAG = "AchievementService"
 
+
     /**
      * Inicjalizuje domyślne osiągnięcia w systemie
-     * ZMIANA: Sprawdza czy już istnieją w lokalnej bazie
      */
     suspend fun initializeDefaultAchievements(): Result<Unit> {
         return try {
-            // Sprawdź czy już są definicje w lokalnej bazie
-            val existing = achievementRepository.getAllAchievementDefinitions().getOrNull() ?: emptyList()
-            if (existing.isNotEmpty()) {
-                Log.d(TAG, "Default achievements already exist (${existing.size} found)")
-                return Result.success(Unit)
+            Log.d(TAG, "Starting initialization of default achievements")
+
+            // ZMIANA: Użyj Repository do inicjalizacji - już ma wszystkie definicje
+            // Repository automatycznie sprawdzi i doda brakujące osiągnięcia
+            val result = achievementRepository.getAllAchievementDefinitions()
+
+            if (result.isSuccess) {
+                val definitions = result.getOrNull() ?: emptyList()
+                Log.d(TAG, "Successfully initialized ${definitions.size} achievement definitions")
+
+                definitions.forEach { def ->
+                    Log.d(TAG, "  - ${def.title} (${def.id})")
+                }
+
+                Result.success(Unit)
+            } else {
+                Log.e(TAG, "Failed to initialize achievement definitions")
+                Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
             }
-
-            val defaultAchievements = listOf(
-                AchievementDefinition(
-                    id = "first_workout",
-                    title = "Pierwszy trening",
-                    description = "Wykonaj swój pierwszy trening",
-                    type = AchievementType.WORKOUT_COUNT,
-                    targetValue = 1,
-                    xpReward = 50,
-                    iconName = "🏃"
-                ),
-                AchievementDefinition(
-                    id = "morning_bird",
-                    title = "Poranny ptaszek",
-                    description = "Wykonaj 10 porannych treningów (przed 10:00)",
-                    type = AchievementType.MORNING_WORKOUTS,
-                    targetValue = 10,
-                    xpReward = 100,
-                    iconName = "🌅"
-                ),
-                AchievementDefinition(
-                    id = "workout_streak_3",
-                    title = "Mini seria",
-                    description = "Trenuj przez 3 dni z rzędu",
-                    type = AchievementType.WORKOUT_STREAK,
-                    targetValue = 3,
-                    xpReward = 100,
-                    iconName = "🔥"
-                ),
-                AchievementDefinition(
-                    id = "workout_streak_7",
-                    title = "Tygodniowa seria",
-                    description = "Trenuj przez 7 dni z rzędu",
-                    type = AchievementType.WORKOUT_STREAK,
-                    targetValue = 7,
-                    xpReward = 250,
-                    iconName = "💪"
-                ),
-                AchievementDefinition(
-                    id = "workout_count_10",
-                    title = "Regularny bywalec",
-                    description = "Ukończ 10 treningów",
-                    type = AchievementType.WORKOUT_COUNT,
-                    targetValue = 10,
-                    xpReward = 200,
-                    iconName = "⭐"
-                ),
-                AchievementDefinition(
-                    id = "workout_hour",
-                    title = "Godzinna sesja",
-                    description = "Zakończ trening trwający ponad godzinę",
-                    type = AchievementType.WORKOUT_DURATION,
-                    targetValue = 3600, // 1 godzina w sekundach
-                    xpReward = 150,
-                    iconName = "⏱️"
-                )
-            )
-
-            // Zapisz domyślne osiągnięcia w repozytorium (local-first)
-            defaultAchievements.forEach { achievement ->
-                achievementRepository.createOrUpdateAchievementDefinition(achievement)
-            }
-
-            Log.d(TAG, "Default achievements initialized successfully (${defaultAchievements.size} created)")
-            Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize default achievements", e)
             Result.failure(e)
@@ -169,37 +117,21 @@ class AchievementService @Inject constructor(
      */
     private suspend fun addXPToUser(userId: String, xpAmount: Int) {
         try {
-            // Pobierz aktualne statystyki z UserRepository
-            val userStatsResult = userRepository.getUserStats(userId)
-            val currentStats = userStatsResult.getOrNull()
 
-            if (currentStats != null) {
-                val newXP = currentStats.xp + xpAmount
-                val newLevel = calculateLevelFromXP(newXP)
+            val result = userRepository.addXP(userId, xpAmount)
 
-                val updatedStats = currentStats.copy(
-                    xp = newXP,
-                    level = newLevel
-                )
-
-                // Aktualizuj statystyki (local-first)
-                userRepository.updateUserStats(updatedStats)
-                Log.d(TAG, "Added $xpAmount XP to user $userId (total: $newXP, level: $newLevel)")
+            if (result.isSuccess) {
+                val updatedStats = result.getOrNull()!!
+                Log.d(TAG, "Added $xpAmount XP to user $userId (total: ${updatedStats.xp}, level: ${updatedStats.level})")
             } else {
-                Log.w(TAG, "Could not find user stats for user: $userId")
+                Log.w(TAG, "Failed to add XP to user $userId: ${result.exceptionOrNull()?.message}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add XP to user $userId", e)
         }
     }
 
-    /**
-     * NOWA METODA: Oblicza poziom na podstawie XP
-     */
-    private fun calculateLevelFromXP(xp: Int): Int {
-        // Prosta formuła: poziom = sqrt(XP / 100) + 1
-        return (kotlin.math.sqrt(xp.toDouble() / 100.0) + 1).toInt()
-    }
+
 
     private suspend fun checkWorkoutCountAchievement(userId: String, definition: AchievementDefinition): AchievementProgress? {
         try {

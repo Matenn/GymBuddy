@@ -9,6 +9,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.Achievem
 import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserAchievementDao
 import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.AchievementDefinitionDao
 import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.AchievementProgressDao
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.DefaultAchievements
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.sync.SyncManager
@@ -78,33 +79,193 @@ class AchievementRepository @Inject constructor(
             val localDefinitions = achievementDefinitionDao.getAllActiveDefinitions()
                 .map { mappers.toModel(it) }
 
-            // Jeśli puste i jest internet, pobierz z Firebase
-            if (localDefinitions.isEmpty() && networkManager.isInternetAvailable()) {
-                Log.d(TAG, "No local definitions found, syncing from Firebase")
-                syncDefinitionsFromFirebase()
-
-                // Pobierz ponownie z lokalnej bazy
-                val updatedDefinitions = achievementDefinitionDao.getAllActiveDefinitions()
-                    .map { mappers.toModel(it) }
-                return Result.success(updatedDefinitions)
-            }
-
-            // Jeśli lokalnie mamy dane, ale nie ma internetu, zwróć lokalne
-            if (localDefinitions.isNotEmpty()) {
-                return Result.success(localDefinitions)
-            }
-
-            // Fallback - zwróć podstawowe osiągnięcia
+            // Pobierz domyślne definicje do porównania
             val defaultDefinitions = getDefaultAchievementDefinitions()
-            // Zapisz domyślne definicje lokalnie
-            defaultDefinitions.forEach { definition ->
-                achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+
+            // 1. ZNAJDŹ BRAKUJĄCE DEFINICJE
+            val missingDefinitions = defaultDefinitions.filter { defaultDef ->
+                localDefinitions.none { localDef -> localDef.id == defaultDef.id }
             }
 
+            // 2. ZNAJDŹ PRZESTARZAŁE DEFINICJE (które są w bazie, ale nie w kodzie)
+            val obsoleteDefinitions = localDefinitions.filter { localDef ->
+                defaultDefinitions.none { defaultDef -> defaultDef.id == localDef.id }
+            }
+
+            // 3. ZNAJDŹ DEFINICJE DO AKTUALIZACJI
+            val definitionsToUpdate = defaultDefinitions.filter { defaultDef ->
+                val localDef = localDefinitions.find { it.id == defaultDef.id }
+                localDef != null && needsUpdate(localDef, defaultDef)
+            }
+
+            var hasChanges = false
+
+            // USUŃ PRZESTARZAŁE DEFINICJE
+            if (obsoleteDefinitions.isNotEmpty()) {
+                Log.d(TAG, "🗑️ Found ${obsoleteDefinitions.size} obsolete achievement definitions, removing them:")
+
+                obsoleteDefinitions.forEach { definition ->
+                    try {
+                        // Usuń całkowicie z lokalnej bazy
+                        achievementDefinitionDao.deleteAchievementDefinition(definition.id)
+                        Log.d(TAG, "🗑️ Removed obsolete achievement: ${definition.title} (${definition.id})")
+                        hasChanges = true
+
+                        // Opcjonalnie: usuń z Firebase (jeśli taka metoda istnieje)
+                        if (networkManager.isInternetAvailable()) {
+                            try {
+                                // remoteDataSource.deleteAchievementDefinition(definition.id)
+                                Log.d(TAG, "🔄 Marked ${definition.title} for Firebase cleanup")
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to remove ${definition.title} from Firebase", e)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Failed to remove achievement: ${definition.title}", e)
+                    }
+                }
+            }
+
+            // DODAJ BRAKUJĄCE DEFINICJE
+            if (missingDefinitions.isNotEmpty()) {
+                Log.d(TAG, "✅ Found ${missingDefinitions.size} missing achievement definitions, adding them:")
+
+                missingDefinitions.forEach { definition ->
+                    try {
+                        achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+                        Log.d(TAG, "✅ Added missing achievement: ${definition.title} (${definition.id})")
+                        hasChanges = true
+
+                        // Synchronizuj z Firebase
+                        if (networkManager.isInternetAvailable()) {
+                            try {
+                                remoteDataSource.saveAchievementDefinition(definition)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to sync ${definition.title} to Firebase", e)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Failed to add achievement: ${definition.title}", e)
+                    }
+                }
+            }
+
+            // AKTUALIZUJ ZMIENIONE DEFINICJE
+            if (definitionsToUpdate.isNotEmpty()) {
+                Log.d(TAG, "🔄 Found ${definitionsToUpdate.size} achievement definitions to update:")
+
+                definitionsToUpdate.forEach { definition ->
+                    try {
+                        val localDef = localDefinitions.find { it.id == definition.id }
+
+                        // Pokaż co się zmieniło
+                        logChanges(localDef!!, definition)
+
+                        achievementDefinitionDao.updateAchievementDefinition(mappers.toEntity(definition))
+                        Log.d(TAG, "🔄 Updated achievement: ${definition.title}")
+                        hasChanges = true
+
+                        // Synchronizuj z Firebase
+                        if (networkManager.isInternetAvailable()) {
+                            try {
+                                remoteDataSource.saveAchievementDefinition(definition)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to sync updated ${definition.title} to Firebase", e)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Failed to update achievement: ${definition.title}", e)
+                    }
+                }
+            }
+
+            // POBIERZ ZAKTUALIZOWANĄ LISTĘ jeśli były zmiany
+            if (hasChanges) {
+                val updatedLocalDefinitions = achievementDefinitionDao.getAllActiveDefinitions()
+                    .map { mappers.toModel(it) }
+
+                Log.d(TAG, "🎯 Successfully synchronized achievement definitions. Total count: ${updatedLocalDefinitions.size}")
+                Log.d(TAG, "📋 Current achievements:")
+                updatedLocalDefinitions.forEach { def ->
+                    Log.d(TAG, "  ✅ ${def.title} (${def.id})")
+                }
+
+                return Result.success(updatedLocalDefinitions)
+            }
+
+            // BEZ ZMIAN - zwróć lokalne (ale tylko te które są w defaultDefinitions)
+            val validLocalDefinitions = localDefinitions.filter { localDef ->
+                defaultDefinitions.any { defaultDef -> defaultDef.id == localDef.id }
+            }
+
+            if (validLocalDefinitions.isNotEmpty()) {
+                Log.d(TAG, "ℹ️ All ${validLocalDefinitions.size} achievement definitions are up to date")
+                return Result.success(validLocalDefinitions)
+            }
+
+            // FALLBACK - pierwsze uruchomienie (pusta baza)
+            Log.d(TAG, "🚀 No local definitions found, initializing ${defaultDefinitions.size} default achievements")
+
+            defaultDefinitions.forEach { definition ->
+                try {
+                    achievementDefinitionDao.insertAchievementDefinition(mappers.toEntity(definition))
+
+                    if (networkManager.isInternetAvailable()) {
+                        try {
+                            remoteDataSource.saveAchievementDefinition(definition)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to sync ${definition.title} to Firebase", e)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to initialize achievement: ${definition.title}", e)
+                }
+            }
+
+            Log.d(TAG, "✅ Successfully initialized all default achievement definitions")
             Result.success(defaultDefinitions)
+
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get achievement definitions", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Sprawdza czy definicja potrzebuje aktualizacji
+     */
+    private fun needsUpdate(local: AchievementDefinition, default: AchievementDefinition): Boolean {
+        return local.title != default.title ||
+                local.description != default.description ||
+                local.type != default.type ||
+                local.targetValue != default.targetValue ||
+                local.xpReward != default.xpReward ||
+                local.iconName != default.iconName ||
+                local.exerciseId != default.exerciseId ||
+                local.categoryId != default.categoryId ||
+                local.isActive != default.isActive
+    }
+
+    /**
+     * Loguje jakie zmiany zostały wykryte
+     */
+    private fun logChanges(local: AchievementDefinition, new: AchievementDefinition) {
+        val changes = mutableListOf<String>()
+
+        if (local.title != new.title) changes.add("title: '${local.title}' → '${new.title}'")
+        if (local.description != new.description) changes.add("description: '${local.description}' → '${new.description}'")
+        if (local.targetValue != new.targetValue) changes.add("targetValue: ${local.targetValue} → ${new.targetValue}")
+        if (local.xpReward != new.xpReward) changes.add("xpReward: ${local.xpReward} → ${new.xpReward}")
+        if (local.exerciseId != new.exerciseId) changes.add("exerciseId: '${local.exerciseId}' → '${new.exerciseId}'")
+        if (local.iconName != new.iconName) changes.add("iconName: '${local.iconName}' → '${new.iconName}'")
+        if (local.categoryId != new.categoryId) changes.add("categoryId: '${local.categoryId}' → '${new.categoryId}'")
+        if (local.isActive != new.isActive) changes.add("isActive: ${local.isActive} → ${new.isActive}")
+
+        if (changes.isNotEmpty()) {
+            Log.d(TAG, "  📝 Changes in '${new.title}':")
+            changes.forEach { change ->
+                Log.d(TAG, "    - $change")
+            }
         }
     }
 
@@ -488,98 +649,6 @@ class AchievementRepository @Inject constructor(
      * Zwraca domyślne definicje osiągnięć jako fallback
      */
     private fun getDefaultAchievementDefinitions(): List<AchievementDefinition> {
-        return listOf(
-            AchievementDefinition(
-                id = "first_workout",
-                title = "Pierwszy trening",
-                description = "Wykonaj swój pierwszy trening",
-                type = AchievementType.WORKOUT_COUNT,
-                targetValue = 1,
-                xpReward = 50,
-                iconName = "🏃"
-            ),
-            AchievementDefinition(
-                id = "morning_bird",
-                title = "Poranny ptaszek",
-                description = "Wykonaj 10 porannych treningów (przed 10:00)",
-                type = AchievementType.MORNING_WORKOUTS,
-                targetValue = 10,
-                xpReward = 100,
-                iconName = "🌅"
-            ),
-            AchievementDefinition(
-                id = "workout_streak_3",
-                title = "Mini seria",
-                description = "Trenuj przez 3 dni z rzędu",
-                type = AchievementType.WORKOUT_STREAK,
-                targetValue = 3,
-                xpReward = 100,
-                iconName = "🔥"
-            ),
-            AchievementDefinition(
-                id = "workout_streak_7",
-                title = "Tygodniowa seria",
-                description = "Trenuj przez 7 dni z rzędu",
-                type = AchievementType.WORKOUT_STREAK,
-                targetValue = 7,
-                xpReward = 250,
-                iconName = "💪"
-            ),
-            AchievementDefinition(
-                id = "workout_count_10",
-                title = "Regularny bywalec",
-                description = "Ukończ 10 treningów",
-                type = AchievementType.WORKOUT_COUNT,
-                targetValue = 10,
-                xpReward = 200,
-                iconName = "⭐"
-            ),
-            AchievementDefinition(
-                id = "workout_count_25",
-                title = "Zaawansowany",
-                description = "Ukończ 25 treningów",
-                type = AchievementType.WORKOUT_COUNT,
-                targetValue = 25,
-                xpReward = 500,
-                iconName = "🏆"
-            ),
-            AchievementDefinition(
-                id = "workout_count_50",
-                title = "Ekspert",
-                description = "Ukończ 50 treningów",
-                type = AchievementType.WORKOUT_COUNT,
-                targetValue = 50,
-                xpReward = 1000,
-                iconName = "👑"
-            ),
-            AchievementDefinition(
-                id = "workout_hour",
-                title = "Godzinna sesja",
-                description = "Zakończ trening trwający ponad godzinę",
-                type = AchievementType.WORKOUT_DURATION,
-                targetValue = 3600, // 1 godzina w sekundach
-                xpReward = 150,
-                iconName = "⏱️"
-            ),
-            AchievementDefinition(
-                id = "workout_2_hours",
-                title = "Maraton treningowy",
-                description = "Zakończ trening trwający ponad 2 godziny",
-                type = AchievementType.WORKOUT_DURATION,
-                targetValue = 7200, // 2 godziny w sekundach
-                xpReward = 300,
-                iconName = "🏃‍♂️"
-            ),
-            AchievementDefinition(
-                id = "bench_press_100kg",
-                title = "Setka na ławce",
-                description = "Wykonaj wyciskanie sztangi leżąc z obciążeniem 100kg",
-                type = AchievementType.EXERCISE_WEIGHT,
-                targetValue = 100,
-                xpReward = 500,
-                iconName = "💪",
-                exerciseId = "bench-press" // ID ćwiczenia z bazy
-            )
-        )
+        return DefaultAchievements.ALL
     }
 }

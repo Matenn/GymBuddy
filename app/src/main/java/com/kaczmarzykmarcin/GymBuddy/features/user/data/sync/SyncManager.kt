@@ -409,8 +409,10 @@ class SyncManager @Inject constructor(
                 return
             }
 
-            // 1. Wyślij lokalne postępy do serwera (jeśli zostały zmodyfikowane)
+            // 1. Wyślij lokalne postępy do serwera (tylko te które zostały zmodyfikowane)
             val localProgresses = achievementProgressDao.getUserProgresses(currentUserId)
+
+            Log.d(TAG, "Found ${localProgresses.size} local achievement progresses to potentially sync")
 
             for (progressEntity in localProgresses) {
                 try {
@@ -433,6 +435,8 @@ class SyncManager @Inject constructor(
                         val result = remoteDataSource.saveAchievementProgress(progressModel)
                         if (result.isSuccess) {
                             Log.d(TAG, "Successfully synced progress to server: ${progressModel.achievementId}")
+                        } else {
+                            Log.w(TAG, "Failed to sync progress to server: ${progressModel.achievementId}")
                         }
                     }
                 } catch (e: Exception) {
@@ -445,6 +449,7 @@ class SyncManager @Inject constructor(
 
             if (remoteProgresses.isSuccess) {
                 val progresses = remoteProgresses.getOrNull() ?: emptyList()
+                Log.d(TAG, "Found ${progresses.size} remote achievement progresses")
 
                 progresses.forEach { remoteProgress ->
                     try {
@@ -478,6 +483,8 @@ class SyncManager @Inject constructor(
                 }
 
                 Log.d(TAG, "Successfully processed ${progresses.size} achievement progresses from server")
+            } else {
+                Log.w(TAG, "Failed to get remote achievement progresses: ${remoteProgresses.exceptionOrNull()?.message}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing achievement progresses", e)
@@ -489,14 +496,19 @@ class SyncManager @Inject constructor(
      */
     private suspend fun getCurrentUserId(): String? {
         return try {
-            // Najpierw spróbuj pobrać z lokalnej bazy
-            val users = userDao.getUsersToSync()
+            // Najpierw spróbuj Firebase Auth (jeśli dostępne)
+            val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (currentFirebaseUser != null) {
+                return currentFirebaseUser.uid
+            }
+
+            // Jeśli nie ma Firebase Auth, użyj ALL users zamiast tylko tych do sync
+            val users = userDao.getAllUsers()
             if (users.isNotEmpty()) {
                 return users.first().id
             }
 
-            // Jeśli nie ma w lokalnej bazie, pobierz pierwszy użytkownik
-            // W rzeczywistej aplikacji powinieneś mieć lepszy sposób na przechowywanie aktualnego użytkownika
+            Log.w(TAG, "No current user found")
             null
         } catch (e: Exception) {
             Log.e(TAG, "Error getting current user ID", e)
@@ -537,6 +549,7 @@ class SyncManager @Inject constructor(
                 templatesResult.getOrNull()?.forEach { template ->
                     workoutTemplateDao.insertWorkoutTemplate(mappers.toEntity(template))
                 }
+                Log.d(TAG, "Synced workout templates")
             }
 
             // Pobierz i zapisz historię treningów
@@ -545,13 +558,13 @@ class SyncManager @Inject constructor(
                 workoutsResult.getOrNull()?.forEach { workout ->
                     workoutDao.insertCompletedWorkout(mappers.toEntity(workout))
                 }
+                Log.d(TAG, "Synced workout history")
             }
 
             // Pobierz i zapisz kategorie treningowe
             val categoriesResult = remoteDataSource.getUserWorkoutCategories(userId)
             if (categoriesResult.isSuccess) {
                 categoriesResult.getOrNull()?.forEach { category ->
-                    // Sprawdź czy kategoria już istnieje lokalnie
                     val existingCategory = workoutCategoryDao.getWorkoutCategoryById(category.id)
                     val entity = mappers.toEntity(category, needsSync = false)
 
@@ -561,15 +574,29 @@ class SyncManager @Inject constructor(
                         workoutCategoryDao.updateWorkoutCategory(entity)
                     }
                 }
+                Log.d(TAG, "Synced workout categories")
             }
 
-            // NOWE: Pobierz i zapisz osiągnięcia
-            syncAchievementDefinitions()
-            val achievementProgressesResult = remoteDataSource.getUserAchievementProgresses(userId)
-            if (achievementProgressesResult.isSuccess) {
-                achievementProgressesResult.getOrNull()?.forEach { progress ->
-                    achievementProgressDao.insertAchievementProgress(mappers.toEntity(progress))
+            // NOWY SYSTEM: Pobierz i zapisz osiągnięcia
+            try {
+                Log.d(TAG, "Starting achievement system sync in force full sync")
+
+                // Synchronizuj definicje osiągnięć
+                syncAchievementDefinitions()
+
+                // Synchronizuj postępy osiągnięć użytkownika
+                val achievementProgressesResult = remoteDataSource.getUserAchievementProgresses(userId)
+                if (achievementProgressesResult.isSuccess) {
+                    val progresses = achievementProgressesResult.getOrNull() ?: emptyList()
+                    progresses.forEach { progress ->
+                        achievementProgressDao.insertAchievementProgress(mappers.toEntity(progress))
+                    }
+                    Log.d(TAG, "Synced ${progresses.size} achievement progresses")
                 }
+
+                Log.d(TAG, "Achievement system sync completed in force full sync")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error syncing achievement system in force full sync", e)
             }
 
             Log.d(TAG, "Forced full sync completed successfully")

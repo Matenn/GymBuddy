@@ -96,6 +96,19 @@ class UserRepository @Inject constructor(
             // Inicjalizuj domyślne kategorie treningowe
             workoutCategoryRepository.initializeDefaultCategories(firebaseUser.uid)
 
+            try {
+                Log.d(TAG, "Initializing default achievements for new user: ${firebaseUser.uid}")
+                val definitionsResult = achievementRepository.getAllAchievementDefinitions()
+                if (definitionsResult.isSuccess) {
+                    val definitions = definitionsResult.getOrNull() ?: emptyList()
+                    Log.d(TAG, "Successfully initialized ${definitions.size} achievement definitions")
+                } else {
+                    Log.w(TAG, "Failed to get achievement definitions: ${definitionsResult.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing default achievements", e)
+            }
+
 
             Result.success(newUser)
         } catch (e: Exception) {
@@ -138,8 +151,15 @@ class UserRepository @Inject constructor(
         val userProfileEntity = userProfileDao.getUserProfileById(userEntity.profileId) ?: return null
         val userStatsEntity = userStatsDao.getUserStatsById(userEntity.statsId) ?: return null
 
-        // Użyj prostszej metody mappers.toUserData która bierze entity bezpośrednio
-        return mappers.toUserData(userEntity, userAuthEntity, userProfileEntity, userStatsEntity)
+        // Pobierz osiągnięcia z nowego systemu
+        val achievements = try {
+            achievementRepository.getUserAchievements(userId).getOrNull() ?: emptyList()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get achievements for local user data", e)
+            emptyList()
+        }
+
+        return mappers.toUserData(userEntity, userAuthEntity, userProfileEntity, userStatsEntity, achievements)
     }
 
     /**
@@ -160,8 +180,26 @@ class UserRepository @Inject constructor(
                 userProfileDao.insertUserProfile(mappers.toEntity(userData.profile))
                 userStatsDao.insertUserStats(mappers.toEntity(userData.stats))
 
-                // Stare osiągnięcia już nie są obsługiwane
                 Log.d(TAG, "Saved basic user data to local database")
+
+                // NOWY SYSTEM: Synchronizuj osiągnięcia
+                try {
+                    Log.d(TAG, "Synchronizing achievement system for user: $userId")
+
+                    // Najpierw zainicjalizuj domyślne definicje osiągnięć jeśli ich nie ma
+                    achievementRepository.getAllAchievementDefinitions()
+
+                    // Następnie zsynchronizuj postępy użytkownika
+                    val syncResult = achievementRepository.syncUserAchievements(userId)
+                    if (syncResult.isSuccess) {
+                        Log.d(TAG, "Successfully synchronized achievement system")
+                    } else {
+                        Log.w(TAG, "Failed to sync achievements: ${syncResult.exceptionOrNull()?.message}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error synchronizing achievement system", e)
+                    // Kontynuuj mimo błędu
+                }
 
                 // Synchronizuj kategorie treningowe
                 try {
@@ -173,33 +211,26 @@ class UserRepository @Inject constructor(
                         Log.d(TAG, "Found ${categories.size} categories to sync")
 
                         categories.forEach { category ->
-                            // Sprawdź czy kategoria już istnieje lokalnie
                             val existingCategory = workoutCategoryDao.getWorkoutCategoryById(category.id)
                             if (existingCategory == null) {
-                                // Dodaj nową kategorię
                                 val entity = mappers.toEntity(category, needsSync = false)
                                 workoutCategoryDao.insertWorkoutCategory(entity)
                                 Log.d(TAG, "Added category: ${category.name}")
                             } else {
-                                // Aktualizuj istniejącą kategorię
                                 val entity = mappers.toEntity(category, needsSync = false)
                                 workoutCategoryDao.updateWorkoutCategory(entity)
                                 Log.d(TAG, "Updated category: ${category.name}")
                             }
                         }
 
-                        // Inicjalizuj domyślne kategorie jeśli ich nie ma
                         workoutCategoryRepository.initializeDefaultCategories(userId)
-
                         Log.d(TAG, "Successfully synchronized ${categories.size} workout categories")
                     } else {
                         Log.e(TAG, "Failed to sync workout categories: ${categoriesResult.exceptionOrNull()?.message}")
-                        // Mimo błędu, spróbuj zainicjalizować domyślne kategorie lokalnie
                         workoutCategoryRepository.initializeDefaultCategories(userId)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error synchronizing workout categories", e)
-                    // Mimo błędu, spróbuj zainicjalizować domyślne kategorie lokalnie
                     workoutCategoryRepository.initializeDefaultCategories(userId)
                 }
 
@@ -222,11 +253,19 @@ class UserRepository @Inject constructor(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error synchronizing workouts", e)
-                    // Kontynuuj mimo błędu, gdyż najważniejsze są dane użytkownika
+                }
+
+                // POPRAWKA: Zwróć UserData z zsynchronizowanymi osiągnięciami
+                val finalUserData = try {
+                    val achievements = achievementRepository.getUserAchievements(userId).getOrNull() ?: emptyList()
+                    userData.copy(achievements = achievements)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to get final achievements", e)
+                    userData
                 }
 
                 Log.d(TAG, "Successfully downloaded and saved user data locally")
-                Result.success(userData)
+                Result.success(finalUserData)
             } else {
                 Log.e(TAG, "Failed to get user data from Firebase", remoteResult.exceptionOrNull())
                 remoteResult

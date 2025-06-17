@@ -32,6 +32,7 @@ import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutTempl
 
 /**
  * Mapery do konwersji między modelami danych a encjami Room
+ * ZAKTUALIZOWANE: Obsługa nowego systemu osiągnięć z AchievementWithProgress
  */
 class UserMappers(private val gson: Gson) {
 
@@ -305,7 +306,12 @@ class UserMappers(private val gson: Gson) {
         )
     }
 
-    // UserData (composite model) - ZAKTUALIZOWANE dla nowego systemu osiągnięć
+    // ===== ZAKTUALIZOWANE METODY UserData dla NOWEGO SYSTEMU OSIĄGNIĘĆ =====
+
+    /**
+     * Tworzy UserData z przekazanymi modelami
+     * ZAKTUALIZOWANE: Używa AchievementWithProgress zamiast UserAchievement
+     */
     fun toUserData(
         user: User,
         userAuth: UserAuth,
@@ -318,22 +324,27 @@ class UserMappers(private val gson: Gson) {
             auth = userAuth,
             profile = userProfile,
             stats = userStats,
-            achievements = emptyList() // Stare osiągnięcia już nie używane
+            achievements = achievements // POPRAWKA: Używaj przekazanych osiągnięć
         )
     }
 
+    /**
+     * Tworzy UserData z encji Room
+     * ZAKTUALIZOWANE: Dodano parametr achievements z AchievementWithProgress
+     */
     fun toUserData(
         userEntity: UserEntity,
         userAuthEntity: UserAuthEntity,
         userProfileEntity: UserProfileEntity,
-        userStatsEntity: UserStatsEntity
+        userStatsEntity: UserStatsEntity,
+        achievements: List<AchievementWithProgress> = emptyList()
     ): UserData {
         return UserData(
             user = toModel(userEntity),
             auth = toModel(userAuthEntity),
             profile = toModel(userProfileEntity),
             stats = toModel(userStatsEntity),
-            achievements = emptyList() // Stare osiągnięcia już nie używane
+            achievements = achievements // POPRAWKA: Dodano parametr osiągnięć
         )
     }
 
