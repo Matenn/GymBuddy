@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.google.firebase.auth.FirebaseAuth
-import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementWithProgress
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementWithProgress
 import com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.components.BadgeDetailBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.achievements.presentation.viewmodel.BadgesViewModel
 

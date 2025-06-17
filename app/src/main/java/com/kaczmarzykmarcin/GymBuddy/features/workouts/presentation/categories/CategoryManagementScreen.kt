@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -25,18 +24,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.BottomNavigationBar
-import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.Black
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.DarkGray
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.White
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.AppBackgroundLight
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.Black
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.DarkGray
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.White
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

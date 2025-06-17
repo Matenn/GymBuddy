@@ -4,8 +4,8 @@ package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
-import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutCategoryRepository
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutCategory
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.data.repository.WorkoutCategoryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

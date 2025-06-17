@@ -3,7 +3,6 @@ package com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,8 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,8 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.AppBackgroundLight
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -8,7 +8,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Arrangement
@@ -34,11 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.FitnessCenter
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,35 +62,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.google.firebase.Timestamp
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.rememberContentPadding
-import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthState
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutDetailsBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.history.viewmodel.WorkoutHistoryViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
-import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.data.repository.WorkoutRepository
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.core.utils.TimeUtils
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import javax.inject.Inject
 
 private const val TAG = "WorkoutHistoryScreen"
 
@@ -104,7 +96,7 @@ private const val TAG = "WorkoutHistoryScreen"
 @dagger.hilt.EntryPoint
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface WorkoutRepositoryEntryPoint {
-    val workoutRepository: com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+    val workoutRepository: WorkoutRepository
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

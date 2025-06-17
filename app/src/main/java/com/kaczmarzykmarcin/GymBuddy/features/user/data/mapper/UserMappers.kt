@@ -1,9 +1,34 @@
 package com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper
 
+import com.google.firebase.Timestamp
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.kaczmarzykmarcin.GymBuddy.data.model.*
-import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.entity.*
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.AchievementDefinitionEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.AchievementProgressEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.CompletedWorkoutEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.UserAuthEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.UserEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.UserProfileEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.UserStatsEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.WorkoutCategoryEntity
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.entity.WorkoutTemplateEntity
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementDefinition
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementProgress
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementType
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementWithProgress
+import com.kaczmarzykmarcin.GymBuddy.features.auth.domain.model.AuthProvider
+import com.kaczmarzykmarcin.GymBuddy.features.auth.domain.model.UserAuth
+import com.kaczmarzykmarcin.GymBuddy.features.profile.domain.model.UserProfile
+
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.ExerciseStat
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.User
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.UserData
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.UserStats
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.WorkoutTypeStat
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedExercise
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedWorkout
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutCategory
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutTemplate
 
 /**
  * Mapery do konwersji między modelami danych a encjami Room
@@ -167,7 +192,7 @@ class UserMappers(private val gson: Gson) {
             isActive = entity.isActive,
             exerciseId = entity.exerciseId,
             categoryId = entity.categoryId,
-            createdAt = com.google.firebase.Timestamp(entity.createdAt, 0)
+            createdAt = Timestamp(entity.createdAt, 0)
         )
     }
 
@@ -191,8 +216,8 @@ class UserMappers(private val gson: Gson) {
             achievementId = entity.achievementId,
             currentValue = entity.currentValue,
             isCompleted = entity.isCompleted,
-            completedAt = entity.completedAt?.let { com.google.firebase.Timestamp(it, 0) },
-            lastUpdated = com.google.firebase.Timestamp(entity.lastUpdated, 0)
+            completedAt = entity.completedAt?.let { Timestamp(it, 0) },
+            lastUpdated = Timestamp(entity.lastUpdated, 0)
         )
     }
 

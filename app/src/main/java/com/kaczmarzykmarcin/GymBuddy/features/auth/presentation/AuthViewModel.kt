@@ -22,10 +22,8 @@ import com.google.firebase.auth.FacebookAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.ktx.Firebase
-import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
-import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.AchievementService
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.repository.UserRepository
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.service.AchievementService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow

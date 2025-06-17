@@ -23,10 +23,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.domain.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.ExerciseLibraryViewModel
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.DarkGray
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.DarkGray
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.LightGrayBackground
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)

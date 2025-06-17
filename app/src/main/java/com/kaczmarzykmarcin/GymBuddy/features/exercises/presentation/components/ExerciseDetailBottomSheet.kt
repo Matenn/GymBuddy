@@ -29,10 +29,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.DarkGray
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.domain.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.AppBackgroundLight
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.DarkGray
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.LightGrayBackground
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)

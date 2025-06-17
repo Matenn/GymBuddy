@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.domain.model.Exercise
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.data.local.entity.ExerciseEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

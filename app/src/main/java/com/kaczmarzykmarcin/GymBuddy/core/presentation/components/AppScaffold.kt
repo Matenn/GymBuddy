@@ -24,7 +24,7 @@ import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.ActiveWorkoutMiniBar
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.TrainingRecorderBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.core.navigation.NavigationRoutes
 
 // Modify: com/kaczmarzykmarcin/GymBuddy/core/presentation/components/AppScaffold.kt
 

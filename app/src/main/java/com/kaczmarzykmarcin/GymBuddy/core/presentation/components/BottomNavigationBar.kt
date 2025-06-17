@@ -27,8 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.AppBackgroundLight
+import com.kaczmarzykmarcin.GymBuddy.core.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.AppBackgroundLight
 
 @Composable
 fun BottomNavigationBar(

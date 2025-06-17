@@ -3,8 +3,8 @@ package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.history.view
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
-import com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedWorkout
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.data.repository.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

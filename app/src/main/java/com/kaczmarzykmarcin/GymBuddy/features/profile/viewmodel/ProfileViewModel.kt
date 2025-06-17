@@ -4,12 +4,11 @@ package com.kaczmarzykmarcin.GymBuddy.features.profile.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
-import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementWithProgress
-import com.kaczmarzykmarcin.GymBuddy.data.model.UserData
-import com.kaczmarzykmarcin.GymBuddy.data.repository.AchievementRepository
-import com.kaczmarzykmarcin.GymBuddy.data.repository.UserRepository
-import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.AchievementService
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementWithProgress
+import com.kaczmarzykmarcin.GymBuddy.features.user.domain.model.UserData
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.data.repository.AchievementRepository
+import com.kaczmarzykmarcin.GymBuddy.features.user.data.repository.UserRepository
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.service.AchievementService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

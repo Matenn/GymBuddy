@@ -16,8 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementType
-import com.kaczmarzykmarcin.GymBuddy.data.model.AchievementWithProgress
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementType
+import com.kaczmarzykmarcin.GymBuddy.features.achievements.domain.model.AchievementWithProgress
 import java.text.SimpleDateFormat
 import java.util.*
 

@@ -1,8 +1,6 @@
 package com.kaczmarzykmarcin.GymBuddy.features.dashboard.presentation
 
 import android.util.Log
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,13 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,13 +36,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,9 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,23 +61,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
-import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
-import com.kaczmarzykmarcin.GymBuddy.data.model.UserData
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedWorkout
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthState
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.dashboard.data.repository.DashboardViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutDetailsBottomSheet
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
-import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.data.repository.WorkoutRepository
+import com.kaczmarzykmarcin.GymBuddy.core.utils.TimeUtils
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 private const val TAG = "DashboardScreen"
@@ -101,7 +84,7 @@ private const val TAG = "DashboardScreen"
 @dagger.hilt.EntryPoint
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface WorkoutRepositoryEntryPoint {
-    val workoutRepository: com.kaczmarzykmarcin.GymBuddy.data.repository.WorkoutRepository
+    val workoutRepository: WorkoutRepository
 }
 
 @Composable

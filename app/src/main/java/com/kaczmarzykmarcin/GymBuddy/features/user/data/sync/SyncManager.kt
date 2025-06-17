@@ -2,8 +2,18 @@ package com.kaczmarzykmarcin.GymBuddy.features.user.data.sync
 
 import android.content.Context
 import android.util.Log
-import com.kaczmarzykmarcin.GymBuddy.common.network.NetworkConnectivityManager
-import com.kaczmarzykmarcin.GymBuddy.features.user.data.local.dao.*
+import com.kaczmarzykmarcin.GymBuddy.core.network.NetworkConnectivityManager
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.AchievementDefinitionDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.AchievementProgressDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserAchievementDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserAuthDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserProfileDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.UserStatsDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.WorkoutCategoryDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.WorkoutDao
+import com.kaczmarzykmarcin.GymBuddy.core.data.local.dao.WorkoutTemplateDao
+
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.mapper.UserMappers
 import com.kaczmarzykmarcin.GymBuddy.features.user.data.remote.RemoteUserDataSource
 import kotlinx.coroutines.CoroutineScope

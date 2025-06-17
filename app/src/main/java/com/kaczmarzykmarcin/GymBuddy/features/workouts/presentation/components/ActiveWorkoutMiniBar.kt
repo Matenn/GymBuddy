@@ -25,8 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.kaczmarzykmarcin.GymBuddy.data.model.CompletedWorkout
-import com.kaczmarzykmarcin.GymBuddy.utils.TimeUtils
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.CompletedWorkout
+import com.kaczmarzykmarcin.GymBuddy.core.utils.TimeUtils
 import kotlinx.coroutines.delay
 
 @Composable

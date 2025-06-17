@@ -1,7 +1,5 @@
 package com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model
 
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
-
 // Enums
 enum class TimePeriod(val displayName: String) {
     WEEK("Tydzień"),

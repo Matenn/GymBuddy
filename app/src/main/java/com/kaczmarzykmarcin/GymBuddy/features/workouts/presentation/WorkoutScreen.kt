@@ -1,8 +1,6 @@
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,9 +16,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,7 +45,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -61,11 +56,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
 import com.kaczmarzykmarcin.GymBuddy.core.presentation.components.AppScaffold
-import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutTemplate
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutTemplate
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components.WorkoutTemplateBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.viewmodel.WorkoutViewModel
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.core.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.LightGrayBackground
 
 @Composable
 fun WorkoutScreen(

@@ -1,13 +1,11 @@
 // CategoryPickerDialog.kt
 package com.kaczmarzykmarcin.GymBuddy.features.workout.presentation.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -24,8 +22,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
-import com.kaczmarzykmarcin.GymBuddy.navigation.NavigationRoutes
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutCategory
+import com.kaczmarzykmarcin.GymBuddy.core.navigation.NavigationRoutes
 import androidx.core.graphics.toColorInt
 
 @OptIn(ExperimentalMaterial3Api::class)

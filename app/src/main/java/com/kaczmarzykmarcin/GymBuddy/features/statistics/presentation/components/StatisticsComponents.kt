@@ -1,7 +1,6 @@
 package com.kaczmarzykmarcin.GymBuddy.features.statistics.presentation.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -19,12 +18,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kaczmarzykmarcin.GymBuddy.R
-import com.kaczmarzykmarcin.GymBuddy.data.model.Exercise
-import com.kaczmarzykmarcin.GymBuddy.data.model.WorkoutCategory
+import com.kaczmarzykmarcin.GymBuddy.features.exercises.domain.model.Exercise
+import com.kaczmarzykmarcin.GymBuddy.features.workouts.domain.model.WorkoutCategory
 import com.kaczmarzykmarcin.GymBuddy.features.exercises.presentation.components.SingleExerciseSelectionBottomSheet
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.StatType
 import com.kaczmarzykmarcin.GymBuddy.features.statistics.data.model.TimePeriod
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.LightGrayBackground
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.LightGrayBackground
 import kotlinx.coroutines.launch
 
 @Composable

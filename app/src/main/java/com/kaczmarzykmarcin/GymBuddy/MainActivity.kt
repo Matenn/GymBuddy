@@ -13,8 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 
 import com.kaczmarzykmarcin.GymBuddy.features.auth.presentation.AuthViewModel
-import com.kaczmarzykmarcin.GymBuddy.navigation.AppNavigation
-import com.kaczmarzykmarcin.GymBuddy.ui.theme.GymBuddyTheme
+import com.kaczmarzykmarcin.GymBuddy.core.navigation.AppNavigation
+import com.kaczmarzykmarcin.GymBuddy.core.presentation.theme.GymBuddyTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 private const val TAG = "MainActivity"
